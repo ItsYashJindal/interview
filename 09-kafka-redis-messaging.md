@@ -30,24 +30,23 @@ Your resume mentions Kafka with dead-letter queues, Redis leader election, Redis
 
 ### Why use a message queue
 
-> 🎤 **Interview answer:** "A message queue lets one service hand off work and move on, while another service processes it asynchronously. There are four main benefits. Faster responses, because slow work like emails, SMS, PDF invoices and notifications happens in the background. Decoupling, because the producer doesn't need to know who consumes the event. Absorbing traffic spikes, because messages wait in the queue and consumers process at their own pace. And reliability, because if a consumer is down, messages are kept and retried.
+> 🎤 **Interview answer:** "A message queue lets one service **drop a message and move on**, while another service picks it up and does the work later. It's like leaving a note in a box for someone else to handle.
 >
-> My real example: at Appsinvo, notifications and order receipts were sent inside the order API request. That made the API slow, and if the email or SMS provider failed, either the order request failed or the message was lost. I moved them to Kafka: the order API just publishes an `order.placed` event and returns, and consumers handle notifications with retries and a dead-letter queue."
-
-A queue lets one service **send a message and move on**, while another service processes it later.
-
-Benefits:
-- **Faster API response** – the slow work (email, SMS, PDF invoice, notification) is done in the background. I moved notification and order-receipt events to Kafka so the order API returned faster.
-- **Decoupling** – order service doesn't need to know who listens.
-- **Handles traffic spikes** – messages wait in the queue; consumers process at their own speed.
-- **Reliability** – if a consumer is down, messages stay and are processed later; retries are possible.
+> Benefits:
+> - **Faster APIs** – slow work like emails, SMS, invoices and notifications is done in the background.
+> - **Services don't depend on each other** – the order service doesn't need to know who reads the message.
+> - **Handles traffic spikes** – messages wait in the queue, and workers process them at their own speed.
+> - **Nothing is lost** – if a worker is down, messages wait and are processed later.
+>
+> My real example: at Appsinvo, the order API was sending emails and SMS itself. It was slow, and if the email provider failed, the message was lost. I moved this to Kafka. Now the order API just sends an 'order placed' event and returns. A separate consumer sends the notifications, with retries and a dead-letter queue."
 
 ### Queue vs pub/sub
 
-> 🎤 **Interview answer:** "In a point-to-point queue, each message is processed by exactly one consumer. It's a job queue, where multiple workers share the load, like SQS or a RabbitMQ queue. In pub/sub, each message is delivered to every subscriber, so multiple independent services can react to the same event, like Redis pub/sub, SNS, or a Kafka topic read by several consumer groups. Kafka actually gives both: within one consumer group it behaves like a queue, because each partition goes to one consumer, and across groups it behaves like pub/sub."
-
-- **Queue (point-to-point)** – each message is processed by **one** consumer (job queue). SQS, RabbitMQ queue.
-- **Pub/sub** – each message goes to **every** subscriber group. Kafka topic with multiple consumer groups, Redis pub/sub, SNS.
+> 🎤 **Interview answer:**
+> - "**Queue** – each message is handled by **only one** worker. Many workers share the load. Like a ticket counter: each customer goes to one counter. Examples: SQS, RabbitMQ queue.
+> - **Pub/sub** – each message goes to **every** subscriber. Like a WhatsApp group: everyone gets the message. Examples: Redis pub/sub, SNS.
+>
+> Kafka can do both: inside one consumer group it acts like a queue, and different consumer groups each get every message, like pub/sub."
 
 ---
 
@@ -55,104 +54,119 @@ Benefits:
 
 ### Kafka core concepts
 
-> 🎤 **Interview answer:** "Kafka is a distributed, durable, append-only commit log. Producers write messages to topics. Each topic is split into partitions, which are ordered logs and the unit of parallelism, and each message in a partition has an offset. Partitions are replicated across brokers, typically with a replication factor of 3, with one leader and followers, so data survives broker failures. Messages stay on disk for the retention period even after they're consumed, so they can be replayed.
+> 🎤 **Interview answer:** "Kafka is like a **long, saved list of messages** (a log). Messages stay saved on disk for some days, even after they're read, so they can be read again later.
 >
-> Consumers read in consumer groups: each partition is assigned to only one consumer within a group, so the maximum parallelism equals the number of partitions, and consumers commit offsets to remember where they stopped. Different consumer groups each get all the messages independently. For example, our notification service and an analytics service could both read `order.placed`. Newer Kafka uses KRaft instead of ZooKeeper for cluster metadata."
-
-Kafka is a distributed, durable **log** of messages. Messages are stored on disk for a retention period (e.g. 7 days) even after being read.
+> - **Producer** – sends messages.
+> - **Topic** – a named channel, like `order.placed`.
+> - **Partition** – a topic is split into parts, so many consumers can work in parallel. Each partition keeps messages in order.
+> - **Offset** – the position number of a message in a partition.
+> - **Consumer group** – a team of consumers sharing the work. Each partition is read by **only one** consumer in the team. So 6 partitions = max 6 consumers working at once.
+> - **Commit offset** – the consumer saves 'I've finished up to message X', so after a restart it continues from there.
+>
+> Different consumer groups each get **all** the messages. So our notification service and an analytics service can both read `order.placed` independently."
 
 | Term | Simple meaning |
 |---|---|
-| **Broker** | A Kafka server. A cluster has many brokers |
-| **Topic** | A named stream of messages, e.g. `order.placed` |
-| **Partition** | A topic is split into partitions for parallel processing. Each partition is an ordered log |
+| **Broker** | A Kafka server. A cluster has many |
+| **Topic** | A named channel of messages, e.g. `order.placed` |
+| **Partition** | A part of a topic. Lets many consumers work in parallel. Ordered |
 | **Offset** | Position number of a message inside a partition |
-| **Producer** | Sends messages to a topic |
+| **Producer** | Sends messages |
 | **Consumer** | Reads messages |
-| **Consumer group** | Consumers sharing the work. Each partition is read by **only one** consumer in a group |
-| **Replication factor** | Copies of each partition on different brokers (e.g. 3) for safety |
-| **Leader / follower** | One broker is the leader for a partition; followers copy it |
-| **Commit offset** | Consumer saves "I've processed up to offset X" so it continues from there after restart |
-| **ZooKeeper / KRaft** | Cluster metadata management (newer Kafka uses KRaft, no ZooKeeper) |
+| **Consumer group** | A team of consumers sharing the work. Each partition → one consumer in the team |
+| **Replication factor** | How many copies of each partition are kept on different servers (e.g. 3) |
+| **Commit offset** | Consumer saves "done up to X" so it continues from there after restart |
 
-**Scaling rule:** max useful consumers in a group = number of partitions. 6 partitions → up to 6 consumers in parallel.
-**Different consumer groups** each get **all** messages: e.g. `email-service` group and `analytics` group both read `order.placed`.
+**Scaling rule:** max useful consumers in a group = number of partitions. 6 partitions → up to 6 consumers.
 
 ### How ordering works
 
-> 🎤 **Interview answer:** "Kafka only guarantees order within a single partition, not across the whole topic. The producer chooses the partition by hashing the message key, so all messages with the same key go to the same partition, in order. So I use a key like `orderId` or `userId`, which means all events for one order, like placed, paid and shipped, are processed in sequence, while different orders still run in parallel across partitions. If I needed strict global order, I'd need a single partition, which kills parallelism, so I design around per-entity ordering instead."
-
-- Order is guaranteed **only inside one partition**, not across the whole topic.
-- Messages with the **same key** go to the **same partition**. So use `orderId` or `userId` as the key → all events of one order are processed in order.
+> 🎤 **Interview answer:** "Kafka keeps order **only inside one partition**, not across the whole topic. When sending, I give each message a **key**. All messages with the same key go to the same partition, so they stay in order. I use `orderId` as the key. So all events of one order, like placed → paid → shipped, are processed in the right order. Different orders still run in parallel on different partitions."
 
 ### Delivery guarantees
 
-> 🎤 **Interview answer:** "There are three levels. At-most-once: you commit the offset before processing, so messages can be lost but never duplicated. At-least-once: you process first and commit after, so nothing is lost, but if the consumer crashes after processing and before committing, the message is redelivered. That's the most common choice, and it's what I used, and it requires idempotent consumers. Exactly-once: Kafka supports it with idempotent producers and transactions, but only within Kafka. As soon as the side effect is external, like sending an email or writing to a database, you still need idempotent handling on your side. On the producer side I use `acks=all`, the idempotent producer and retries, so a message isn't lost before it reaches Kafka."
+> 🎤 **Interview answer:** "There are three levels:
+> - **At-most-once** – a message may be lost, but never repeated. (Save progress first, then process.)
+> - **At-least-once** – a message is never lost, but may come **twice**. (Process first, then save progress. If the consumer crashes in between, the message comes again.) This is the most common, and what I used. So the consumer must handle duplicates safely.
+> - **Exactly-once** – Kafka supports it inside Kafka. But for outside actions like sending an email or writing to a DB, we still need to handle duplicates ourselves.
+>
+> On the sending side, I use `acks=all` (wait until all copies are saved) and turn on the idempotent producer, so messages aren't lost or duplicated on the way to Kafka."
 
 | Type | Meaning | How |
 |---|---|---|
-| At-most-once | May lose, never duplicate | Commit offset before processing |
-| **At-least-once** (most common) | Never lose, may duplicate | Process first, then commit offset → **consumer must be idempotent** |
-| Exactly-once | No loss, no duplicate | Kafka idempotent producer + transactions (works within Kafka); for external side effects (email, DB) you still need idempotent handling |
-
-Producer safety: `acks=all` (wait for all in-sync replicas), idempotent producer enabled, retries.
+| At-most-once | May lose, never repeat | Save progress before processing |
+| **At-least-once** (most common) | Never lose, may repeat | Process first, then save progress → **consumer must handle duplicates** |
+| Exactly-once | No loss, no repeat | Kafka transactions (only inside Kafka) |
 
 ### Retries and dead-letter queue (DLQ)
 
-> 🎤 **Interview answer:** "The problem is that some messages fail: the email provider is down, or the data is bad. If the consumer keeps retrying forever, it blocks the whole partition and every message behind it waits. If it just skips the message, the message is lost. So here's what I implemented at Appsinvo.
+> 🎤 **Interview answer:** "Some messages fail, for example the email provider is down, or the data is bad.
+> - If the consumer **keeps retrying forever**, all messages behind it are stuck.
+> - If it **skips** the message, the message is lost.
 >
-> On failure, the consumer retries a limited number of times with backoff, about three attempts. I did that by republishing to a retry topic with an attempt-count header, so the main partition isn't blocked. If it still fails after the maximum attempts, the message goes to a dead-letter topic like `notifications.dlq`, together with the error message, attempt count, original topic and offset, and the timestamp. Then the offset is committed and the main flow continues. We monitor the DLQ and alert when it's not empty, investigate the cause, fix it, and replay the messages back to the main topic.
+> So at Appsinvo I did this:
+> 1. When a message fails, I **retry it a few times** (about 3), waiting a bit longer each time. I do this by sending it to a separate **retry topic** with an 'attempts' count, so the main topic isn't blocked.
+> 2. If it still fails after 3 tries, I send it to a **dead-letter queue (DLQ)** – a separate topic for failed messages – together with the error, the attempt count and the time.
+> 3. Then the main flow continues.
+> 4. We get an **alert** when the DLQ is not empty. We find the cause, fix it, and **send the messages again** to the main topic.
 >
-> I also separate error types: transient errors like timeouts or 5xx get retried, while permanent ones like validation errors go straight to the DLQ, because retrying a poison message never helps."
-
-**Problem:** a message fails processing (bad data, email provider down). If we keep retrying forever, the partition is stuck and later messages wait. If we skip it, we lose it.
-
-**Solution I used:**
-1. Try to process.
-2. On failure, **retry a few times** with backoff (e.g. 3 times: 1 s, 5 s, 30 s). Can be in-process or by sending to a `topic.retry` topic.
-3. After max retries, send the message to a **dead-letter topic** (`notifications.dlq`) with error details (error message, attempt count, original topic/partition/offset, timestamp).
-4. Commit the offset so the main flow continues.
-5. **Monitor the DLQ** (alert when count > 0), check the cause, fix, and **replay** messages back to the main topic.
+> I also treat errors differently: temporary errors like timeouts are retried, but permanent errors like bad data go straight to the DLQ, because retrying won't help."
 
 ```js
 await consumer.run({
-  eachMessage: async ({ topic, partition, message }) => {
+  eachMessage: async ({ topic, message }) => {
     const attempts = Number(message.headers?.attempts?.toString() || 0);
+
     try {
       await handleNotification(JSON.parse(message.value.toString()));
     } catch (err) {
       if (attempts < 3) {
+        // try again later
         await producer.send({
           topic: "notifications.retry",
-          messages: [{ key: message.key, value: message.value, headers: { attempts: String(attempts + 1) } }],
+          messages: [{
+            key: message.key,
+            value: message.value,
+            headers: { attempts: String(attempts + 1) },
+          }],
         });
       } else {
+        // give up → dead-letter queue
         await producer.send({
           topic: "notifications.dlq",
-          messages: [{ key: message.key, value: message.value,
-            headers: { error: err.message, originalTopic: topic, failedAt: new Date().toISOString() } }],
+          messages: [{
+            key: message.key,
+            value: message.value,
+            headers: { error: err.message, originalTopic: topic, failedAt: new Date().toISOString() },
+          }],
         });
       }
     }
   },
 });
 ```
-**Poison message** = a message that will always fail (bad format). DLQ stops it from blocking the queue.
-**Transient vs permanent errors:** retry on timeouts / 5xx; send directly to DLQ on validation errors (retrying won't help).
+**Poison message** = a message that will **always** fail (e.g. bad format). The DLQ stops it from blocking everything else.
 
 ### Idempotent consumers
 
-> 🎤 **Interview answer:** "Since at-least-once delivery means the same message can arrive twice, for example after a consumer crash or a rebalance before the offset commit, every consumer must be safe to run twice. The way I do it: every event carries a unique `eventId`. Before processing, the consumer checks whether that id has already been processed, using a processed-events table with a unique constraint or a Redis set with a TTL, and records it after success. Where possible I rely on natural uniqueness, like a unique `orderId` in the receipts table, and use upserts instead of inserts. That's how we made sure a customer never got two order emails for the same order."
+> 🎤 **Interview answer:** "With at-least-once delivery, the same message can arrive twice. So every consumer must be **safe to run twice**. How I do it:
+> - Every event has a unique `eventId`.
+> - Before processing, I check if that id was already processed (a DB table with a unique rule, or a Redis set).
+> - Where possible, I use a natural unique field, like a unique `orderId` in the receipts table, so a second insert simply fails.
+>
+> That's how we made sure a customer never got two emails for the same order."
 
-Because of at-least-once delivery, the same message can come twice (consumer crashed after processing but before committing).
-Fix:
-- Every event has a unique `eventId`.
-- Before processing, check a `processed_events` table / Redis set; or use a unique DB constraint (e.g. unique `orderId` in receipts table).
-- Use upserts instead of inserts.
+```js
+async function handle(event) {
+  const isNew = await redis.set(`processed:${event.eventId}`, 1, "NX", "EX", 86400);
+  if (!isNew) return;          // already processed → skip
+  await sendOrderEmail(event);
+}
+```
 
 ### Kafka with Node.js (kafkajs)
 
-> 🎤 **Interview answer:** "In Node I used kafkajs. I create a Kafka client with a clientId and the broker list. The producer is created with `idempotent: true`, and I send messages with a key, like the order id for ordering, and a JSON value containing an eventId. The consumer joins a groupId, like 'notification-service', subscribes to the topic and processes messages in `eachMessage`, with try/catch that leads into the retry and DLQ logic. I also handle graceful shutdown: on SIGTERM, I disconnect the consumer so offsets are committed and the group rebalances cleanly."
+> 🎤 **Interview answer:** "In Node I used `kafkajs`. I create a Kafka client with the broker addresses. The **producer** sends messages with a key (order id, for ordering) and a JSON value that includes an `eventId`. The **consumer** joins a group, like `notification-service`, subscribes to the topic, and processes each message inside try/catch, which leads to the retry and DLQ logic. On shutdown, I disconnect the consumer properly so its progress is saved."
 
 ```js
 const { Kafka } = require("kafkajs");
@@ -163,7 +177,10 @@ const producer = kafka.producer({ idempotent: true });
 await producer.connect();
 await producer.send({
   topic: "order.placed",
-  messages: [{ key: String(order.id), value: JSON.stringify({ eventId, orderId: order.id, userId }) }],
+  messages: [{
+    key: String(order.id),
+    value: JSON.stringify({ eventId, orderId: order.id, userId }),
+  }],
 });
 
 // Consumer
@@ -173,34 +190,36 @@ await consumer.subscribe({ topic: "order.placed", fromBeginning: false });
 await consumer.run({ eachMessage: async ({ message }) => { /* process */ } });
 ```
 
-**Consumer lag** = how far behind the consumer is (latest offset – committed offset). Monitor it. High lag → add consumers (up to partition count) or make processing faster.
+**Consumer lag:**
 
-> 🎤 **Interview answer:** "Consumer lag is the difference between the latest offset in a partition and the offset the consumer group has committed, basically how far behind the consumer is. It's the key health metric for consumers. If lag keeps growing, consumers can't keep up, and I either scale out consumers, up to the number of partitions, or make processing faster, with batching or by removing slow calls. I set alerts on lag so we find out before users notice delayed notifications."
+> 🎤 **Interview answer:** "Consumer lag means **how far behind** the consumer is: how many messages are waiting that it hasn't processed yet. It's the main health number for consumers. If lag keeps growing, the consumers are too slow. Then I add more consumers (up to the number of partitions), or make processing faster. I set alerts on lag, so we know before users notice late notifications."
 
-**Rebalancing** = when a consumer joins/leaves, partitions are re-assigned. During this, consumption pauses briefly.
+**Rebalancing:**
 
-> 🎤 **Interview answer:** "A rebalance happens when a consumer joins or leaves the group, or is considered dead because it missed heartbeats or took too long to process. Kafka then reassigns partitions among the remaining consumers, and consumption pauses briefly. Frequent rebalances hurt throughput and can cause duplicate processing, so I keep message processing well within the session and poll timeouts, shut consumers down gracefully, and make handlers idempotent."
+> 🎤 **Interview answer:** "A rebalance happens when a consumer joins or leaves the group. Kafka then re-assigns the partitions among the consumers, and reading pauses for a moment. Too many rebalances slow things down and can cause duplicate processing. So I keep processing fast, shut down consumers properly, and make handlers safe to run twice."
 
 ### Kafka vs RabbitMQ vs SQS
 
-> 🎤 **Interview answer:** "Kafka is a distributed log: messages are kept for the retention period and can be replayed, it handles very high throughput, it supports many independent consumer groups, and it orders per partition. It's best for event streaming, multiple consumers of the same events, and analytics, but it takes the most effort to operate, unless you use MSK or Confluent. RabbitMQ is a traditional broker: messages are deleted after acknowledgement, it has very flexible routing with direct, topic and fanout exchanges, and built-in dead-letter exchanges. It's great for task queues and complex routing. SQS is fully managed by AWS with zero ops: a simple queue with visibility timeouts and built-in DLQ redrive, and FIFO queues when you need ordering. It's ideal for simple background jobs on AWS.
+> 🎤 **Interview answer:**
+> - "**Kafka** – a saved log. Messages stay for days and can be **read again**. Very high speed. Many consumer groups can read the same events. Best for event streaming and when many services need the same events. Hardest to run yourself.
+> - **RabbitMQ** – a classic message broker. Messages are **deleted after they're processed**. Very flexible routing, and built-in dead-letter support. Great for task queues.
+> - **SQS** – AWS's fully managed queue. **Nothing to run or maintain**. Simple, with built-in DLQ. Great for simple background jobs on AWS.
 >
-> At Appsinvo we chose Kafka because several consumers needed the same order events and replay was valuable. For a simple job queue on AWS, I'd pick SQS."
+> At Appsinvo we chose Kafka because many consumers needed the same order events, and being able to replay them was useful. For a simple job queue on AWS, I'd pick SQS."
 
 | | Kafka | RabbitMQ | AWS SQS |
 |---|---|---|---|
-| Model | Distributed log (pub/sub with replay) | Message broker with queues and exchanges | Managed simple queue |
-| Message after read | Kept until retention ends (can replay) | Deleted after ack | Deleted after consumer deletes it |
-| Throughput | Very high (millions/sec) | High | High, managed |
-| Ordering | Per partition | Per queue | Standard: no; FIFO queues: yes |
-| Routing | By topic/partition key | Flexible (direct, topic, fanout exchanges) | None (use SNS for fanout) |
-| DLQ | Build yourself (DLQ topic) | Built-in (dead-letter exchange) | Built-in (redrive policy, `maxReceiveCount`) |
-| Ops effort | High (or MSK/Confluent) | Medium | None |
-| Good for | Event streaming, many consumers, analytics, event sourcing | Task queues, complex routing, RPC | Simple background jobs on AWS |
+| Model | Saved log (can replay) | Message broker with queues | Managed simple queue |
+| After reading | Kept until retention ends | Deleted after ack | Deleted after consumer deletes it |
+| Speed | Very high | High | High |
+| Ordering | Per partition | Per queue | Only in FIFO queues |
+| DLQ | Build yourself (DLQ topic) | Built-in | Built-in |
+| Work to run it | High | Medium | None |
+| Good for | Event streaming, many consumers | Task queues, complex routing | Simple background jobs on AWS |
 
-**SQS points:** visibility timeout (message hidden while a consumer works; if not deleted in time it appears again), long polling, FIFO with deduplication id.
+**SQS key points:**
 
-> 🎤 **Interview answer:** "The key SQS concepts are the following. When a consumer receives a message, it becomes invisible for the visibility timeout. If the consumer doesn't delete it within that time, for example because it crashed, the message becomes visible again and is retried, so processing must be idempotent and the timeout must be longer than the processing time. Long polling reduces empty responses and cost. A redrive policy with `maxReceiveCount` moves repeatedly failing messages to a DLQ automatically. FIFO queues give ordering per message group and deduplication with a deduplication id."
+> 🎤 **Interview answer:** "When a worker takes a message from SQS, the message becomes **hidden** for some time (visibility timeout). If the worker finishes, it deletes the message. If the worker crashes and doesn't delete it, the message **appears again** after the timeout and is retried. So processing must be safe to repeat, and the timeout must be longer than the processing time. After a set number of failures (`maxReceiveCount`), SQS moves the message to a DLQ automatically. FIFO queues keep order and remove duplicates."
 
 ---
 
@@ -208,91 +227,104 @@ await consumer.run({ eachMessage: async ({ message }) => { /* process */ } });
 
 ### Redis data types and uses
 
-> 🎤 **Interview answer:** "Redis has several data structures, and choosing the right one is the main design decision. Strings are for cache values, counters with INCR, rate limits and OTPs with TTL. Hashes are for objects with fields, like a session. Lists are for simple queues or the latest N items. Sets are for unique things like online users. Sorted sets are for leaderboards, sliding-window rate limiting and delayed jobs, sorted by timestamp. Streams are for a persistent log with consumer groups and acknowledgements. Pub/sub is for real-time broadcast. And there are geo commands and HyperLogLog for approximate unique counts. In my projects I've used strings for cache, OTP, rate limiting and the leader lock, and pub/sub for inter-service events and price broadcasts."
+> 🎤 **Interview answer:** "Redis has different data types, and picking the right one is the main design choice:
+> - **String** – simple value. For cache, counters, rate limits, OTPs with expiry.
+> - **Hash** – an object with fields, like a session.
+> - **List** – a simple queue or 'latest 10 items'.
+> - **Set** – unique values, like online users.
+> - **Sorted set** – values with a score, always sorted. For leaderboards.
+> - **Stream** – a saved message queue with consumer groups.
+> - **Pub/sub** – live broadcast.
+>
+> I've used strings for cache, OTP, rate limiting and the leader lock, and pub/sub for events between services and price updates."
 
 | Type | Commands | Use case |
 |---|---|---|
 | String | `SET GET INCR EXPIRE` | Cache, counters, rate limit, OTP |
-| Hash | `HSET HGET HGETALL` | User session/object fields |
+| Hash | `HSET HGET HGETALL` | Session / object fields |
 | List | `LPUSH RPOP LRANGE` | Simple queue, latest N items |
-| Set | `SADD SISMEMBER SMEMBERS` | Unique visitors, online users, tags |
-| Sorted set | `ZADD ZRANGE ZREVRANGE ZINCRBY` | Leaderboards, sliding-window rate limit, delayed jobs |
-| Stream | `XADD XREADGROUP XACK` | Persistent message queue with consumer groups |
-| Pub/Sub | `PUBLISH SUBSCRIBE` | Real-time broadcast |
+| Set | `SADD SISMEMBER SMEMBERS` | Unique visitors, online users |
+| Sorted set | `ZADD ZRANGE ZINCRBY` | Leaderboards, sliding-window rate limit |
+| Stream | `XADD XREADGROUP XACK` | Saved message queue with consumer groups |
+| Pub/Sub | `PUBLISH SUBSCRIBE` | Live broadcast |
 | Geo | `GEOADD GEOSEARCH` | Nearby search |
-| Bitmap / HyperLogLog | `SETBIT`, `PFADD` | Daily active flags, approximate unique counts |
 
 **Q. Why is Redis fast?**
 
-> 🎤 **Interview answer:** "There are four reasons. All data lives in RAM, so there's no disk I/O on reads and writes. It uses efficient, purpose-built data structures. Commands execute on a single thread, so there's no locking or context-switching overhead. And it uses I/O multiplexing with epoll to handle thousands of client connections efficiently. Most operations are O(1) or O(log n), so typical latency is sub-millisecond."
-
-Data in RAM, simple data structures, single-threaded command execution (no lock overhead), efficient I/O multiplexing.
+> 🎤 **Interview answer:** "Four reasons: all data is in **RAM**, not on disk. It uses simple, efficient data structures. It runs commands **one at a time** on a single thread, so there's no time wasted on locks. And it handles thousands of connections efficiently. Most operations take less than a millisecond."
 
 **Q. Redis is single-threaded – is that a problem?**
 
-> 🎤 **Interview answer:** "Command execution is single-threaded, which is actually an advantage: every individual command is atomic, which is why INCR for rate limiting or SET NX for locks is safe without extra locking. It's fast enough for most workloads, since the bottleneck is usually network or memory, not CPU. Newer versions also use I/O threads for networking. The real risk is slow commands: `KEYS *`, fetching huge sets or long Lua scripts block every other client. So I use SCAN, keep values small and scripts short, and scale with Redis Cluster if needed."
-
-Commands run one at a time, so each command is atomic. It's fast enough for most cases. Slow commands (`KEYS *`, huge `SMEMBERS`, big Lua scripts) block everyone – avoid them.
+> 🎤 **Interview answer:** "Running commands one at a time is actually a **benefit**: each command runs fully before the next one starts, so it can't be interrupted. That's why `INCR` for rate limiting and `SET NX` for locks are safe without extra locking. The real risk is **slow commands**, like `KEYS *` or reading a huge set. While they run, every other client waits. So I avoid them and use `SCAN` instead of `KEYS`."
 
 ### Redis pub/sub
 
-> 🎤 **Interview answer:** "Redis pub/sub lets publishers send messages to a channel, and every client currently subscribed to that channel receives them instantly. A subscribing connection is dedicated, so I use a separate, duplicated connection for subscribing. The critical limitation is that it's fire and forget: messages aren't stored and there's no acknowledgement, so if a subscriber is offline or reconnecting, it simply misses them.
+> 🎤 **Interview answer:** "With Redis pub/sub, a publisher sends a message to a **channel**, and everyone subscribed to that channel **right now** gets it instantly.
 >
-> That makes it great for real-time data where the latest value replaces the old one, like crypto price updates, typing indicators, cache invalidation broadcasts, or the Socket.io Redis adapter. At KindSwap we also used it between the Referral and Staking services. For events that must not be lost, the right tools are Redis Streams with consumer groups, Kafka or RabbitMQ, or a DB-backed outbox with a reconciliation job, and that's what I'd recommend for critical reward events."
+> The big limitation: it's **fire and forget**. Messages are **not saved**. If a subscriber is offline or reconnecting at that moment, it simply misses the message. There's no retry.
+>
+> So it's great when **the next message replaces the old one**, like live crypto prices, typing indicators, or telling all servers to clear a cache. At KindSwap we also used it between the Referral and Staking services. For events that must never be lost, like rewards, I'd recommend Redis Streams, Kafka or RabbitMQ, or saving the event in the DB with a retry job."
 
 ```js
-const sub = redis.duplicate();             // subscriber needs its own connection
+// Subscriber (needs its own connection)
+const sub = redis.duplicate();
 await sub.subscribe("price-updates");
 sub.on("message", (channel, msg) => io.emit("price", JSON.parse(msg)));
 
+// Publisher
 await redis.publish("price-updates", JSON.stringify({ symbol: "SOL", price: 182.4 }));
 ```
-**Important limitations:**
-- **Fire and forget** – no storage. If a subscriber is offline, it misses the message.
+**Limitations:**
+- No storage – if a subscriber is offline, it misses the message.
 - No acknowledgement, no retry.
-- Good for: real-time updates where the next message replaces the old one (prices, typing indicators, cache invalidation broadcasts, Socket.io scaling).
-- If you need guaranteed delivery → **Redis Streams**, Kafka, or RabbitMQ.
+- Need guaranteed delivery → **Redis Streams**, Kafka or RabbitMQ.
 
 ### Leader election with Redis
 
-> 🎤 **Interview answer:** "This is one of my favourite problems I solved. At KindSwap, the price service ran on 4 to 5 instances for availability, and every instance fetched crypto prices and published updates. So users received duplicate price updates, and we were calling the price provider five times more than needed. The goal was that exactly one instance publishes, with automatic failover.
+> 🎤 **Interview answer:** "This is one of my favourite problems. At KindSwap, the price service ran on 4–5 servers for safety. **Every** server fetched crypto prices and sent updates. So users got **duplicate** price updates, and we called the price provider 5 times more than needed.
 >
-> I implemented leader election with Redis. Every instance has a unique id. Each one tries `SET price:leader <myId> NX PX 10000`. NX means only one instance can create the key, so it becomes the leader, and the 10-second expiry means that if the leader crashes, the lock frees itself. The leader renews the TTL every 3 seconds using a small Lua script that extends the expiry only if the value is still its own id, so the check and the renewal are atomic and it can never extend someone else's lock. Followers keep retrying the SET NX every few seconds, so when the leader dies, one of them takes over within about 10 seconds. If a renewal fails, the old leader stops publishing immediately. On graceful shutdown it deletes the key, only if it owns it, so takeover is instant. We logged leadership changes and publish counts to CloudWatch, with alarms if there was no leader. The result was zero duplicate updates and automatic failover."
+> The goal: only **one** server (the 'leader') should send updates, and if it dies, another one should take over automatically.
+>
+> How I solved it with Redis:
+> 1. Every server tries to create the same Redis key with its own id: `SET price:leader <myId> NX PX 10000`.
+>    - `NX` means 'only create it if it doesn't exist'. So **only one server can win**. That one is the leader.
+>    - `PX 10000` means the key **expires in 10 seconds**. So if the leader crashes, the key disappears by itself.
+> 2. The leader **renews** the key every 3 seconds, to say 'I'm still alive'. It renews only if the key still has **its own id**, so it can never extend another server's lock.
+> 3. The other servers keep trying to create the key every few seconds. When the leader dies, the key expires within 10 seconds, and one of them becomes the new leader.
+> 4. If renewal fails, the old leader **stops sending immediately**.
+> 5. On a normal shutdown, the leader deletes its key, so another server takes over instantly.
+>
+> We logged leader changes in CloudWatch, with an alert if there was no leader. Result: zero duplicate updates and automatic failover."
 
-**My problem (KindSwap):** the price service ran on 4–5 instances. Each one fetched crypto prices and published updates → users got **duplicate** price updates and we called the price provider 5 times more than needed.
-**Goal:** only **one** instance (the leader) publishes; if it dies, another takes over automatically.
-
-**How it works:**
-1. Every instance has a unique id (hostname + pid / uuid).
-2. Each instance tries to take a lock key:
-   ```
-   SET price:leader <instanceId> NX PX 10000
-   ```
-   - `NX` – set only if the key doesn't exist → only one instance wins.
-   - `PX 10000` – key expires in 10 s, so if the leader crashes, the lock frees itself.
-3. The winner is the **leader** and starts publishing prices.
-4. The leader **renews** the lock every ~3 s (heartbeat), but only if it is still the owner – done atomically with a Lua script:
+**Steps in short:**
+1. Every server has a unique id.
+2. Each tries: `SET price:leader <serverId> NX PX 10000`
+   - `NX` – only one server can create it → that one is the leader.
+   - `PX 10000` – expires in 10 s, so a dead leader frees the lock automatically.
+3. The leader renews every ~3 s, but **only if the key still has its id**. This check + renew is done in one step using a small Lua script, so nothing can happen in between:
    ```lua
+   -- "if the key still has my id, extend it; otherwise do nothing"
    if redis.call("GET", KEYS[1]) == ARGV[1] then
      return redis.call("PEXPIRE", KEYS[1], ARGV[2])
    else
      return 0
    end
    ```
-5. Followers retry `SET NX` every few seconds. If the leader dies, its key expires in ≤10 s and one follower becomes leader.
-6. If renewal fails (returns 0), the old leader **stops publishing immediately** (it lost leadership).
-7. On graceful shutdown, the leader deletes the key (only if it owns it) so takeover is instant.
-8. Monitored with **CloudWatch** – logs/metrics for "became leader", "lost leadership", publish counts.
+4. Followers keep trying step 2. If the leader dies, one of them takes over in ≤10 s.
+5. If renewal returns 0 → the old leader stops publishing.
+6. On shutdown → the leader deletes its own key → instant takeover.
 
 ```ts
 async function tryBecomeLeader() {
-  const ok = await redis.set(KEY, INSTANCE_ID, "PX", TTL_MS, "NX");
+  const ok = await redis.set(KEY, SERVER_ID, "PX", TTL_MS, "NX");
   if (ok === "OK") isLeader = true;
 }
+
 async function renew() {
-  const res = await redis.eval(RENEW_LUA, 1, KEY, INSTANCE_ID, TTL_MS);
-  if (res === 0) isLeader = false;   // lost it
+  const res = await redis.eval(RENEW_LUA, 1, KEY, SERVER_ID, TTL_MS);
+  if (res === 0) isLeader = false;   // lost leadership
 }
+
 setInterval(async () => {
   if (isLeader) await renew();
   else await tryBecomeLeader();
@@ -301,52 +333,72 @@ setInterval(async () => {
 
 **Follow-up questions you may get:**
 
-> 🎤 **Interview answer:** "For the common follow-ups, here's how I answer. If the leader pauses, for example during a long GC, its lock can expire while it still thinks it's the leader, so for a moment two instances could publish. For price updates that's low risk, and I keep the renewal interval well below the TTL. For critical work I'd add fencing tokens, an increasing number per leadership term that consumers check. If Redis itself goes down, no one can become leader, so prices pause instead of being duplicated, which is the safe failure. That's why we use managed Redis with replication and Multi-AZ failover. Redlock across independent nodes exists, but it's debated, and for our case it wasn't needed. Why not just run one instance? Because that's a single point of failure, and the other instances also serve API and socket traffic. Alternatives are etcd, ZooKeeper or Consul, Kubernetes Leases, or Postgres advisory locks."
-
-- *What if the leader pauses (long GC / network issue) and its lock expires, then it wakes up and publishes?* → For a short time there could be two leaders. For price updates this is low-risk. For critical work use a **fencing token** (an increasing number stored with each leadership; the receiver ignores older tokens) and keep renewal interval well below TTL.
-- *What if Redis goes down?* → No one can be leader → no price updates (fail safe instead of duplicates). Use Redis with replication/Sentinel/ElastiCache Multi-AZ. Redlock (multiple independent Redis nodes) is an option, but has known debates; for our case a single managed Redis was enough.
-- *Why not just run one instance?* → Single point of failure; other instances also serve API/socket traffic.
-- *Alternatives?* → ZooKeeper/etcd/Consul leader election, Kubernetes Lease objects, DB advisory locks (`pg_try_advisory_lock`), or a Kafka consumer group with a single-partition topic.
+> 🎤 **Interview answer:**
+> - "**What if the leader freezes for a while and its key expires?** Then for a moment two servers might send updates. For price updates this is low risk. I keep the renewal time (3 s) much shorter than the expiry (10 s). For critical work, I'd add a 'fencing token': a number that increases with every new leader, and receivers ignore messages with an older number.
+> - **What if Redis goes down?** Nobody can become leader, so prices pause. That's safer than duplicates. We use managed Redis with automatic failover to reduce this risk.
+> - **Why not just run one server?** Then if it dies, there are no prices at all. Also, the other servers also handle API and socket traffic.
+> - **Other options?** etcd, ZooKeeper, Consul, Kubernetes Leases, or Postgres advisory locks."
 
 ### Distributed lock
 
-> 🎤 **Interview answer:** "A distributed lock makes sure only one process across all instances does something at a time. It's the same Redis pattern: `SET lock:key <uniqueId> NX PX <ttl>`. If it returns OK, I hold the lock. I use it so a cron job runs on only one instance, so two parallel requests can't process the same payment or redeem the same coupon, and to protect against cache stampedes, where only one request rebuilds a hot key. Two rules: always set a TTL, so a crashed process doesn't hold the lock forever, and release it safely with a Lua script that deletes the key only if the value is still my id, so I never delete a lock someone else acquired after mine expired."
+> 🎤 **Interview answer:** "A distributed lock makes sure **only one server does something at a time**. It's the same Redis idea: `SET lock:key <myId> NX PX <time>`. If I get OK, I have the lock.
+>
+> I use it for:
+> - A cron job that should run on **only one** server, not all of them.
+> - Stopping two requests from processing the **same payment** or the **same coupon** at the same time.
+> - Letting only one request rebuild a popular cache key.
+>
+> Two rules: always set an expiry, so a crashed server doesn't hold the lock forever. And when releasing, delete the key **only if it still has my id**, so I never delete someone else's lock."
 
-Same `SET key value NX PX` idea, used to make sure only one process does something at a time:
-- Cron job runs on all instances → lock so only one runs it.
-- Prevent two parallel requests from processing the same payment / same coupon.
-- Rebuild a cache key (stampede protection).
-
-Release safely – delete only if you own it (Lua: `if GET == myId then DEL`). Always set a TTL so a crashed process doesn't hold the lock forever.
+```js
+const lockId = crypto.randomUUID();
+const got = await redis.set("lock:daily-report", lockId, "NX", "PX", 60000);
+if (got === "OK") {
+  try {
+    await runDailyReport();
+  } finally {
+    // release only if it's still my lock (done with a small Lua script in real code)
+    if ((await redis.get("lock:daily-report")) === lockId) {
+      await redis.del("lock:daily-report");
+    }
+  }
+}
+```
 
 ### Other Redis questions
 
-> 🎤 **Interview answer:** "A few other points I'm ready for. Persistence: RDB snapshots are compact and restart fast but can lose the last few minutes, while AOF logs every write and is safer, and you can combine both. High availability: replicas plus Sentinel for automatic failover, or Redis Cluster, which shards data across 16,384 hash slots for horizontal scale. Compared to Memcached, Redis has rich data types, persistence, replication and pub/sub, while Memcached is just a multi-threaded key-value cache. Transactions use MULTI and EXEC, with WATCH for optimistic locking, and Lua scripts are atomic. Pipelining batches commands to cut round trips. And I watch for big keys and hot keys, because they cause latency spikes."
-
-- **Persistence:** RDB (snapshots every N minutes – fast restart, may lose last minutes) vs AOF (logs every write – safer, bigger files). Can use both.
-- **Replication / Sentinel / Cluster:** replicas for read scale + failover; Sentinel monitors and promotes a new master; Cluster shards data across nodes (16384 hash slots).
-- **Redis vs Memcached:** Redis has many data types, persistence, pub/sub, replication. Memcached is only simple key-value cache, multi-threaded.
-- **Transactions:** `MULTI/EXEC` runs commands together; `WATCH` for optimistic locking. Lua scripts are atomic too.
-- **Pipelining:** send many commands without waiting for each reply – fewer round trips.
-- **TTL** – `EXPIRE`, `TTL key` (-1 = no expiry, -2 = key doesn't exist).
-- **Big keys / hot keys** – very large values or one key with huge traffic cause slowness; split or replicate.
+> 🎤 **Interview answer:**
+> - "**Saving to disk:** RDB takes a snapshot every few minutes (fast restart, but can lose the last few minutes). AOF logs every write (safer, bigger files). You can use both.
+> - **High availability:** replicas keep copies. Sentinel watches and promotes a replica if the main one dies. Redis Cluster splits data across many servers.
+> - **Redis vs Memcached:** Redis has many data types, saving to disk, pub/sub and replication. Memcached is only a simple key-value cache.
+> - **Transactions:** `MULTI` / `EXEC` run commands together. Lua scripts also run as one step.
+> - **Pipelining:** send many commands at once without waiting for each reply, to save time.
+> - **Big keys / hot keys:** a very large value, or one key with huge traffic, slows Redis down."
 
 ---
 
 ## Outbox pattern
 
-> 🎤 **Interview answer:** "The outbox pattern solves the dual-write problem. If I save an order in the database and then publish `order.placed` to Kafka as two separate steps, a crash in between leaves them inconsistent: the order exists but no event was sent, or the event was sent but the DB transaction rolled back.
+> 🎤 **Interview answer:** "The outbox pattern solves this problem: I save an order in the DB, and then send an 'order placed' event to Kafka. These are **two separate steps**. If the app crashes **between** them, the order is saved but the event is never sent. Or the event is sent but the DB save failed.
 >
-> With the outbox pattern, in the same database transaction as the order, I also insert a row into an `outbox` table with the event type and payload. Since it's one transaction, both are saved or neither is. A separate relay worker polls pending outbox rows, publishes them to Kafka and marks them as sent. Change data capture with Debezium is an alternative to polling. Because a row might be published twice if the worker crashes after publishing, consumers stay idempotent. It guarantees that if the order is saved, the event will eventually be published."
+> The fix:
+> 1. In the **same DB transaction** as the order, I also save the event in an `outbox` table. Since it's one transaction, both are saved, or neither.
+> 2. A separate background worker reads new rows from the outbox table, sends them to Kafka, and marks them as 'sent'.
+> 3. A row might be sent twice if the worker crashes at the wrong moment, so consumers must handle duplicates.
+>
+> This guarantees: if the order is saved, the event **will** be sent."
 
-**Problem:** You save an order in DB and then publish `order.placed` to Kafka. If the app crashes between the two, DB has the order but no event is sent (or the event is sent but DB transaction rolled back).
+```
+BEGIN
+  INSERT INTO orders ...
+  INSERT INTO outbox (event_type, payload, status) VALUES ('order.placed', {...}, 'pending')
+COMMIT
 
-**Solution:**
-1. In the **same DB transaction**, insert the order **and** a row in an `outbox` table (`eventType, payload, status = pending`).
-2. A separate worker reads pending outbox rows, publishes them to Kafka, and marks them `sent`.
-3. Consumers are idempotent because a row might be published twice.
-
-This guarantees "if the order is saved, the event will be sent".
+Worker (every few seconds):
+  read outbox rows with status = 'pending'
+  → send to Kafka
+  → mark as 'sent'
+```
 
 ---
 

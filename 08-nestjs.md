@@ -21,23 +21,25 @@ Your resume says "Node.js · TypeScript · NestJS" and you built 2 NestJS micros
 
 ### 1. What is NestJS and why use it
 
-> 🎤 **Interview answer:** "NestJS is a progressive Node.js framework written in TypeScript. It runs on top of Express by default, or Fastify, and gives an opinionated architecture inspired by Angular: modules, controllers, providers, dependency injection and decorators. Compared to plain Express, the big advantage is consistency: every developer knows where code goes, which helps a lot in larger teams and when mentoring juniors. Built-in DI makes unit testing and mocking easy, and it comes with validation pipes, guards, interceptors, Swagger integration and microservice transports like Redis, Kafka and gRPC out of the box. The trade-off is more boilerplate and a learning curve, so for a tiny service Express can be enough. I used NestJS to build the Referral and Staking microservices at KindSwap."
-
-A Node.js framework written in TypeScript. It runs on top of Express (default) or Fastify and gives a fixed structure inspired by Angular: **modules, controllers, services, dependency injection, decorators**.
-
-**Why (vs plain Express):**
-- Clear structure – every developer puts code in the same place (helps big teams and mentoring juniors).
-- Built-in DI → easy testing and mocking.
-- Built-in validation, guards, interceptors, Swagger, microservice transports (Redis, Kafka, RabbitMQ, gRPC).
-- TypeScript first.
-
-**Downside:** more boilerplate and learning curve; for a very small service Express may be enough.
+> 🎤 **Interview answer:** "NestJS is a Node.js framework written in TypeScript. It runs on top of Express, and gives a **fixed structure**: modules, controllers, services, dependency injection and decorators.
+>
+> Why use it instead of plain Express?
+> - **Same structure everywhere** – every developer knows where each piece of code goes. This really helps big teams and new joiners.
+> - **Easy testing** – because of dependency injection, I can swap a real database with a fake one in tests.
+> - **Lots built in** – validation, guards, Swagger docs, and support for Redis, Kafka and other message systems.
+>
+> The downside: more code to write, and it takes time to learn. For a tiny service, plain Express is enough. I used NestJS to build the Referral and Staking microservices at KindSwap."
 
 ---
 
 ### 2. Modules, controllers, providers
 
-> 🎤 **Interview answer:** "These are the three building blocks. A module, decorated with `@Module`, groups everything for one feature: its controllers, its providers, what it imports from other modules and what it exports for others to use. AppModule is the root. A controller handles the HTTP layer: it maps routes with decorators like `@Get` and `@Post`, extracts params and body, and delegates to a service. I keep controllers thin, with no business logic. A provider is anything Nest can inject: services with the business logic, repositories, helpers, factories. There are also global modules with `@Global`, for things like config and Redis, and dynamic modules configured at import time, like `TypeOrmModule.forRootAsync`. In the Referral service, for example, I had a ReferralModule with its controller, its service and the TypeORM repository for the Referral entity."
+> 🎤 **Interview answer:** "These are the three main building blocks:
+> - **Module** – a box that groups everything for one feature: its controller, its services, and what it shares with other modules. `AppModule` is the main box.
+> - **Controller** – handles the HTTP part. It defines routes with `@Get`, `@Post`, reads params and body, and calls a service. I keep controllers thin, with no business logic.
+> - **Provider** – anything Nest can inject, mostly **services**, which hold the business logic.
+>
+> For example, in the Referral service I had a `ReferralModule` with a `ReferralController`, a `ReferralService`, and the database repository for referrals."
 
 ```ts
 // referral.module.ts
@@ -69,15 +71,15 @@ export class ReferralController {
 @Injectable()
 export class ReferralService {
   constructor(@InjectRepository(Referral) private repo: Repository<Referral>) {}
-  findOne(id: string) { return this.repo.findOneByOrFail({ id }); }
+
+  findOne(id: string) {
+    return this.repo.findOneByOrFail({ id });
+  }
 }
 ```
 
-- **Module** – groups related code (a feature). `AppModule` is the root.
-- **Controller** – receives requests, calls service, returns response.
-- **Provider** – anything injectable: services, repositories, helpers, factories.
-- **Global module** – `@Global()` so you don't import it everywhere (e.g. ConfigModule, Redis module).
-- **Dynamic module** – a module configured at import time (`TypeOrmModule.forRoot({...})`, `forRootAsync`).
+- **Global module** – `@Global()`, so you don't need to import it everywhere (e.g. Config, Redis).
+- **Dynamic module** – a module you configure when importing it, like `TypeOrmModule.forRoot({...})`.
 
 ---
 
@@ -85,14 +87,17 @@ export class ReferralService {
 
 **Q. What is DI?**
 
-> 🎤 **Interview answer:** "Dependency injection means a class doesn't create its own dependencies with `new`. It declares them, usually in the constructor, and the framework's IoC container creates and supplies them. In NestJS, I mark a class with `@Injectable`, register it as a provider in a module, and Nest resolves the whole dependency graph, creating singletons by default. The benefits are loose coupling, the ability to swap implementations, like a different payment gateway behind the same token, and very easy testing, because in `Test.createTestingModule` I can replace a real repository with a mock using `useValue`."
-
-Instead of a class creating its own dependencies (`new UserRepository()`), they are **given to it** (usually through the constructor). Nest's IoC container creates and passes them.
-
-**Benefits:** loose coupling, easy to swap implementations, easy to mock in tests.
+> 🎤 **Interview answer:** "Dependency injection means a class **doesn't create the things it needs** itself with `new`. Instead, it just asks for them in its constructor, and NestJS creates them and passes them in.
+>
+> Example: `ReferralService` needs a repository. It doesn't do `new Repository()`. It just writes it in the constructor, and Nest gives it.
+>
+> Benefits:
+> - Classes are loosely connected.
+> - Easy to swap one implementation for another.
+> - **Easy testing**: in a test, I give the service a fake (mock) repository instead of the real database."
 
 ```ts
-// test
+// In a test – give a fake repository instead of the real one
 const module = await Test.createTestingModule({
   providers: [
     ReferralService,
@@ -103,40 +108,56 @@ const module = await Test.createTestingModule({
 
 **Provider types:**
 
-> 🎤 **Interview answer:** "Besides normal class providers, there are custom providers. `useClass` maps a token to a class, which is useful for choosing an implementation, like a PaymentGateway token mapped to RazorpayGateway. `useValue` provides a fixed value, a config object or a mock in tests. `useFactory` builds the provider with a function, which can be async and can inject other providers, like creating a Redis client from ConfigService. `useExisting` creates an alias. For string or symbol tokens, I inject with `@Inject('TOKEN')`."
+> 🎤 **Interview answer:** "Besides normal services, I can tell Nest exactly what to inject:
+> - `useClass` – use this class. For example, the token `PAYMENT_GATEWAY` → `RazorpayGateway`.
+> - `useValue` – use this fixed value, like a config object, or a mock in tests.
+> - `useFactory` – build it with a function, like creating a Redis client using the URL from config."
 
 ```ts
 { provide: "PAYMENT_GATEWAY", useClass: RazorpayGateway }   // class
-{ provide: "CONFIG", useValue: { retries: 3 } }             // value
-{ provide: "REDIS", useFactory: (cfg: ConfigService) => new Redis(cfg.get("REDIS_URL")), inject: [ConfigService] }
+{ provide: "CONFIG", useValue: { retries: 3 } }             // fixed value
+{
+  provide: "REDIS",                                         // built with a function
+  useFactory: (cfg: ConfigService) => new Redis(cfg.get("REDIS_URL")),
+  inject: [ConfigService],
+}
+
+// Inject it
+constructor(@Inject("PAYMENT_GATEWAY") private gateway: PaymentGateway) {}
 ```
-Inject with `@Inject("PAYMENT_GATEWAY") private gateway: PaymentGateway`.
 
-**Scopes:** `DEFAULT` (singleton – one instance for the app, best performance), `REQUEST` (new per request), `TRANSIENT` (new for each consumer).
+**Scopes:**
 
-> 🎤 **Interview answer:** "The default scope is singleton: one instance shared by the whole app, which is the most efficient and what I use almost always. REQUEST scope creates a new instance per incoming request, useful for per-request context like a tenant id, but it costs performance and the scope bubbles up to everything that injects it. TRANSIENT gives each consumer its own instance. So I avoid request scope unless it's really needed, and pass context explicitly or use AsyncLocalStorage instead."
+> 🎤 **Interview answer:** "By default, Nest creates **one instance** of each service for the whole app (singleton). This is the fastest and what I use almost always. `REQUEST` scope creates a new instance for every request, which is slower. `TRANSIENT` gives each user of the service its own copy. I avoid request scope unless I really need it."
 
-**Circular dependency:** A needs B and B needs A → use `forwardRef(() => B)`, but better to refactor (move shared logic to a third service).
+**Circular dependency:**
 
-> 🎤 **Interview answer:** "A circular dependency is when service A injects B and B injects A, so Nest can't decide which to create first. The quick fix is `forwardRef(() => B)` on both sides. But I treat it as a design smell: the better fix is to extract the shared logic into a third service that both depend on, or use events to decouple them."
+> 🎤 **Interview answer:** "A circular dependency is when service A needs B, and B needs A. Nest doesn't know which to create first. The quick fix is `forwardRef(() => B)`. But it usually means the design is wrong. The better fix is to move the shared logic into a third service that both use."
 
 ---
 
 ### 4. Request lifecycle order
 
-> 🎤 **Interview answer:** "The order is: incoming middleware first, then guards, which decide whether the request is allowed at all, like JWT and role checks. Then interceptors run their 'before' logic, like logging or timing. Then pipes validate and transform the params and body. Then the controller method runs and calls the service. On the way back, interceptors run their 'after' logic, like wrapping the response in a standard format. If an exception is thrown anywhere along the way, exception filters catch it and build the error response. Within each type, global ones run first, then controller-level, then route-level."
+> 🎤 **Interview answer:** "When a request comes in, it goes through these steps in order:
+> 1. **Middleware** – general things like logging and request id.
+> 2. **Guards** – is this user allowed? (JWT check, role check)
+> 3. **Interceptors (before)** – things like starting a timer.
+> 4. **Pipes** – validate and convert the input.
+> 5. **Controller → Service** – the real work.
+> 6. **Interceptors (after)** – change the response, like wrapping it in a standard format.
+> 7. **Exception filters** – only if an error was thrown anywhere; they build the error response."
 
 Very commonly asked:
 
 ```
 Incoming request
  → Middleware
- → Guards                 (can this user access? – return true/false)
- → Interceptors (before)  (logging, timing, caching)
- → Pipes                  (validate / transform params and body)
+ → Guards                 (is the user allowed? true / false)
+ → Interceptors (before)  (logging, timing)
+ → Pipes                  (validate / convert params and body)
  → Controller method → Service
- → Interceptors (after)   (change response, e.g. wrap in { data })
- → Exception filters      (only if an error was thrown anywhere)
+ → Interceptors (after)   (change the response, e.g. wrap in { data })
+ → Exception filters      (only if an error was thrown)
  → Response
 ```
 
@@ -144,79 +165,104 @@ Incoming request
 
 ### 5. Middleware vs guards vs interceptors vs pipes vs filters
 
-> 🎤 **Interview answer:** "Middleware is the same as Express middleware. It runs first and doesn't know which handler will execute, so it's for generic things like request ids and logging. Guards answer one question: can this request proceed? They return true or false, and they have access to the ExecutionContext, so they can read metadata like required roles. That's where auth and RBAC go. Interceptors wrap the handler before and after using RxJS, so they can transform responses, measure time, add caching or timeouts. Pipes validate and transform input, like ValidationPipe with DTOs or ParseUUIDPipe. Exception filters convert thrown errors into consistent HTTP responses. Picking the right one keeps responsibilities clean."
+> 🎤 **Interview answer:**
+> - "**Middleware** – same as Express middleware. Runs first. Good for general things like logging.
+> - **Guard** – answers one question: **is this request allowed?** Returns true or false. Used for auth and roles.
+> - **Interceptor** – runs code **before and after** the controller. Used to change the response, measure time, or add caching.
+> - **Pipe** – **checks and converts input**, like validating the body with a DTO, or turning `'5'` into the number 5.
+> - **Exception filter** – **turns errors into a proper response**.
+>
+> Using the right one keeps each job in its own place."
 
-| | Purpose | Knows which handler will run? | Example |
-|---|---|---|---|
-| Middleware | Same as Express middleware | No | Logging, request id, cors |
-| Guard | Allow or deny the request | Yes (`ExecutionContext`) | JWT auth, roles |
-| Interceptor | Run code before and after the handler, change result | Yes | Response wrapper, timing, cache, timeout |
-| Pipe | Validate and transform input | Yes | `ValidationPipe`, `ParseIntPipe` |
-| Exception filter | Turn errors into responses | Yes | Custom error format |
+| | Job | Example |
+|---|---|---|
+| Middleware | Same as Express middleware | Logging, request id |
+| Guard | Allow or block the request | JWT auth, roles |
+| Interceptor | Code before and after the handler | Response wrapper, timing, cache |
+| Pipe | Validate and convert input | `ValidationPipe`, `ParseIntPipe` |
+| Exception filter | Turn errors into responses | Custom error format |
 
 **Interceptor example – response time and wrapper:**
 
-> 🎤 **Interview answer:** "An interceptor implements `intercept(context, next)`. Code before `next.handle()` runs before the controller, and `next.handle()` returns an RxJS Observable of the response. So with operators like `map` I can wrap every response in a standard `{ success: true, data }` format, and with `tap` I can log how long it took. Other uses are `timeout` to fail slow handlers, `catchError` to map errors, or caching. I applied a global transform interceptor so all our microservices returned the same response shape."
+> 🎤 **Interview answer:** "In an interceptor, code before `next.handle()` runs before the controller. `next.handle()` gives the controller's result, and I can change it. Here, I wrap every response in `{ success: true, data }` and log how long it took. I used a global interceptor like this so all our microservices returned the same response shape."
 
 ```ts
 @Injectable()
 export class TransformInterceptor implements NestInterceptor {
   intercept(ctx: ExecutionContext, next: CallHandler) {
-    const start = Date.now();
+    const start = Date.now();                               // before the controller
     return next.handle().pipe(
-      map((data) => ({ success: true, data })),
-      tap(() => console.log(`took ${Date.now() - start}ms`)),
+      map((data) => ({ success: true, data })),             // change the response
+      tap(() => console.log(`took ${Date.now() - start}ms`)), // after the controller
     );
   }
 }
 ```
-Interceptors use **RxJS Observables** (`next.handle()` returns an Observable).
+(`next.handle()` returns an RxJS Observable – that's why we use `.pipe(map, tap)`.)
 
 ---
 
 ### 6. DTOs and validation
 
-> 🎤 **Interview answer:** "A DTO, data transfer object, is a class that defines exactly what an endpoint accepts. I decorate its properties with class-validator decorators like `@IsUUID`, `@IsInt` and `@Min`, and enable a global ValidationPipe with `whitelist: true`, which strips any properties not in the DTO and protects against mass assignment, `forbidNonWhitelisted` to reject them instead, and `transform: true` to convert the payload into the DTO class with proper types. DTOs have to be classes, not interfaces, because interfaces disappear at runtime and the validators need the class metadata. For update DTOs I use `PartialType(CreateDto)`, and the same DTOs drive the Swagger documentation."
+> 🎤 **Interview answer:** "A DTO (Data Transfer Object) is a class that says **exactly what data an API accepts**. I add validation decorators to its fields, like `@IsUUID()` or `@IsInt()`.
+>
+> Then I turn on a global `ValidationPipe` with:
+> - `whitelist: true` – removes any extra fields that aren't in the DTO. This stops users from sending things like `role: 'admin'`.
+> - `transform: true` – converts the input into the DTO class with the right types.
+>
+> A DTO must be a **class**, not an interface, because interfaces disappear when the code runs, and the validators need something that exists at runtime. For update DTOs I use `PartialType(CreateDto)`, which makes all fields optional."
 
-**DTO (Data Transfer Object)** – a class that defines what data the API accepts.
 ```ts
 export class CreateStakeDto {
   @IsUUID() poolId: string;
   @IsNumberString() amount: string;
   @IsOptional() @IsInt() @Min(1) lockDays?: number;
 }
+
+// Update DTO – same fields, all optional
+export class UpdateStakeDto extends PartialType(CreateStakeDto) {}
 ```
 ```ts
 // main.ts
 app.useGlobalPipes(new ValidationPipe({
-  whitelist: true,             // remove fields not in DTO (stops mass assignment)
-  forbidNonWhitelisted: true,  // or throw error for extra fields
-  transform: true,             // convert to DTO class / types
+  whitelist: true,             // remove fields not in the DTO
+  forbidNonWhitelisted: true,  // or give an error for extra fields
+  transform: true,             // convert to the DTO class / types
 }));
 ```
-Why a class and not an interface? Interfaces disappear at runtime; classes stay, so `class-validator` decorators can run.
-
-`PartialType(CreateDto)`, `PickType`, `OmitType` from `@nestjs/mapped-types` / `@nestjs/swagger` – create update DTOs quickly.
 
 ---
 
 ### 7. Guards and RBAC with Auth0
 
-> 🎤 **Interview answer:** "At KindSwap, authentication and RBAC worked in two guards. First, a JWT guard using passport-jwt with jwks-rsa: it fetches Auth0's public key from the tenant's JWKS endpoint, verifies the RS256 signature, expiry, audience and issuer, and attaches the decoded user, including the permissions Auth0 puts in the token, to the request. Second, a custom RolesGuard: I created a `@Roles()` decorator that stores the required permissions as metadata with SetMetadata, and the guard uses the Reflector to read that metadata from the handler or class and checks that the user has one of them. Routes like approving a payout batch were protected with `@Roles('payout:approve')`. If the token is invalid we return 401, and if the permission is missing, the guard returns false and Nest returns 403."
+> 🎤 **Interview answer:** "At KindSwap, we used two guards:
+> 1. **JWT guard** – checks the token that Auth0 gave the user. It gets Auth0's public key, verifies the token is real and not expired, and puts the user (with their permissions) on the request.
+> 2. **Roles guard** – I made a `@Roles()` decorator to mark which permission a route needs, like `@Roles('payout:approve')`. The guard reads this and checks if the user has that permission.
+>
+> If the token is invalid → 401. If the permission is missing → the guard returns false → 403."
 
 ```ts
-// roles.decorator.ts
+// roles.decorator.ts – marks which permissions a route needs
 export const Roles = (...roles: string[]) => SetMetadata("roles", roles);
 
 // roles.guard.ts
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
+
   canActivate(ctx: ExecutionContext): boolean {
-    const required = this.reflector.getAllAndOverride<string[]>("roles", [ctx.getHandler(), ctx.getClass()]);
-    if (!required) return true;
-    const user = ctx.switchToHttp().getRequest().user;    // set by JWT guard
-    const userPerms: string[] = user?.permissions ?? [];  // Auth0 puts permissions in the token
+    // 1. read what the route needs
+    const required = this.reflector.getAllAndOverride<string[]>("roles", [
+      ctx.getHandler(),
+      ctx.getClass(),
+    ]);
+    if (!required) return true; // no rule → allow
+
+    // 2. read what the user has (set by the JWT guard)
+    const user = ctx.switchToHttp().getRequest().user;
+    const userPerms: string[] = user?.permissions ?? [];
+
+    // 3. allow if the user has at least one
     return required.some((r) => userPerms.includes(r));
   }
 }
@@ -225,28 +271,28 @@ export class RolesGuard implements CanActivate {
 @UseGuards(AuthGuard("jwt"), RolesGuard)
 @Roles("payout:approve")
 @Post("payouts/batch")
-approveBatch() { ... }
+approveBatch() { /* ... */ }
 ```
-**JWT strategy for Auth0:** `passport-jwt` with `jwks-rsa` – fetches Auth0's public key from `https://<tenant>/.well-known/jwks.json`, verifies RS256 signature, `audience` and `issuer`.
-
-Guard returns `false` → Nest sends **403**. Throw `UnauthorizedException` → **401**.
 
 ---
 
 ### 8. Exception filters
 
-> 🎤 **Interview answer:** "NestJS has built-in HTTP exceptions like NotFoundException, BadRequestException, UnauthorizedException and ConflictException, which automatically become proper HTTP responses. For a consistent error format across services, I write a global exception filter with `@Catch()` that catches everything. If it's an HttpException, it uses its status and message. Otherwise it returns a 500 with a generic message, so internals aren't leaked. It also logs the full error with context, and every error response has the same shape. I can also create domain-specific exceptions and filters, for example mapping a database unique-constraint error to 409 Conflict."
-
-Nest has built-in HTTP exceptions: `BadRequestException`, `NotFoundException`, `UnauthorizedException`, `ForbiddenException`, `ConflictException`...
+> 🎤 **Interview answer:** "NestJS has ready-made errors like `NotFoundException`, `BadRequestException` and `UnauthorizedException`. When I throw one, Nest sends the right HTTP status automatically.
+>
+> To make **all errors look the same**, I write one global exception filter that catches everything. If it's a known HTTP error, it uses its status and message. If it's an unknown error, it returns 500 with a general message, so internal details aren't shown. It also logs the full error."
 
 ```ts
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const res = host.switchToHttp().getResponse();
-    const status = exception instanceof HttpException ? exception.getStatus() : 500;
-    const message = exception instanceof HttpException ? exception.message : "Internal server error";
-    // log full exception here
+
+    const isHttp = exception instanceof HttpException;
+    const status = isHttp ? exception.getStatus() : 500;
+    const message = isHttp ? exception.message : "Internal server error";
+
+    // log the full error here
     res.status(status).json({ success: false, statusCode: status, message });
   }
 }
@@ -257,18 +303,16 @@ app.useGlobalFilters(new AllExceptionsFilter());
 
 ### 9. Microservices in NestJS
 
-> 🎤 **Interview answer:** "NestJS has a microservices package with pluggable transports: TCP, Redis, Kafka, RabbitMQ, NATS and gRPC, so the handler code looks the same regardless of the broker. There are two communication styles. Request-response uses `@MessagePattern` with `client.send()`, which waits for a reply. Event-based uses `@EventPattern` with `client.emit()`, which is fire and forget. At KindSwap, the Staking and Referral services communicated through Redis pub/sub with events, for example when a stake completed, the Referral service received the event and credited the referrer.
+> 🎤 **Interview answer:** "NestJS can connect services using Redis, Kafka, RabbitMQ, TCP and others, and the code looks the same for all of them. There are two styles:
+> - **Request–response** – `client.send()` + `@MessagePattern`. The caller **waits** for a reply.
+> - **Event** – `client.emit()` + `@EventPattern`. The caller **doesn't wait**. Fire and forget.
 >
-> I'm also honest about the limitation: Redis pub/sub doesn't persist messages, so if a subscriber is down it misses events. For flows that must not lose events, I'd use Kafka, RabbitMQ or Redis Streams, or an outbox table with a reconciliation job. Nest also supports hybrid apps that serve HTTP and listen to a transport at the same time."
-
-Nest supports transports: TCP, Redis, Kafka, RabbitMQ, NATS, gRPC.
-
-**Two styles:**
-- **Request–response** – `@MessagePattern("get_user")` + `client.send()` → waits for reply.
-- **Event-based** – `@EventPattern("referral_rewarded")` + `client.emit()` → fire and forget.
+> At KindSwap, the Staking and Referral services talked through **Redis pub/sub**. For example, when a stake was completed, the Staking service sent an event, and the Referral service gave a reward to the person who referred that user.
+>
+> One honest limitation: Redis pub/sub **doesn't save messages**. If the Referral service is down at that moment, it misses the event. For events that must never be lost, I'd use Kafka, RabbitMQ or Redis Streams, or save the event in the DB and retry."
 
 ```ts
-// Staking service publishes
+// Staking service sends the event
 this.client.emit("stake.completed", { userId, amount });
 
 // Referral service listens
@@ -277,21 +321,26 @@ handleStake(@Payload() data: StakeCompletedEvent) {
   return this.referralService.creditReferrer(data);
 }
 ```
-At KindSwap, Referral and Staking services talked through **Redis pub/sub**. Note: Redis pub/sub does **not store messages** – if a subscriber is down it misses them. For events that must not be lost, use Kafka/RabbitMQ/Redis Streams or add a DB-backed retry/outbox. (Be ready for this follow-up – see [09 → Redis pub/sub](09-kafka-redis-messaging.md#redis-pubsub).)
+See [09 → Redis pub/sub](09-kafka-redis-messaging.md#redis-pubsub) for the follow-up question.
 
-**Hybrid app:** one Nest app that serves HTTP and also listens to a microservice transport (`app.connectMicroservice()`).
+**Hybrid app:** one Nest app that serves HTTP **and** listens to messages (`app.connectMicroservice()`).
 
 ---
 
 ### 10. Config, TypeORM, testing
 
-> 🎤 **Interview answer:** "For configuration, I use `ConfigModule.forRoot` with `isGlobal` and a Joi validation schema, so the app fails at startup if a required env variable is missing. For the database at KindSwap, I used TypeORM: entities defined with decorators, repositories injected with `@InjectRepository`, relations like ManyToOne, and transactions through `dataSource.transaction`. Two important practices: `synchronize: false` in production with proper migrations, because synchronize can drop columns, and storing crypto or money amounts as `numeric` with high precision, never as JavaScript floats.
->
-> For testing, I use `Test.createTestingModule` with mocked providers for unit tests, and supertest against `app.getHttpServer()` for e2e tests. For scheduled jobs, `@nestjs/schedule` with `@Cron`, keeping in mind that with multiple instances every instance runs the cron, so I need a lock or leader election, which is exactly the problem I solved with Redis."
+> 🎤 **Interview answer:**
+> - "**Config** – I use `ConfigModule` with a validation schema, so the app stops at startup if a required setting like `DATABASE_URL` is missing.
+> - **Database** – at KindSwap I used TypeORM. Tables are defined as classes with decorators, and I inject repositories into services. In production I keep `synchronize: false` and use migrations, because `synchronize` can delete columns. I store money and crypto amounts as `numeric`, never as JavaScript decimal numbers, because those have rounding errors.
+> - **Testing** – `Test.createTestingModule` with fake providers for unit tests, and `supertest` for API tests.
+> - **Cron jobs** – `@Cron` from `@nestjs/schedule`. But with many servers, **every** server runs the cron. So I need a lock or leader election, which is exactly the problem I solved with Redis."
 
 **Config:**
 ```ts
-ConfigModule.forRoot({ isGlobal: true, validationSchema: Joi.object({ DATABASE_URL: Joi.string().required() }) })
+ConfigModule.forRoot({
+  isGlobal: true,
+  validationSchema: Joi.object({ DATABASE_URL: Joi.string().required() }),
+});
 ```
 
 **TypeORM:**
@@ -299,19 +348,16 @@ ConfigModule.forRoot({ isGlobal: true, validationSchema: Joi.object({ DATABASE_U
 @Entity()
 export class Stake {
   @PrimaryGeneratedColumn("uuid") id: string;
-  @Column("numeric", { precision: 36, scale: 18 }) amount: string;   // crypto amounts – don't use float
+  @Column("numeric", { precision: 36, scale: 18 }) amount: string; // crypto amount – never float
   @ManyToOne(() => User, (u) => u.stakes) user: User;
   @CreateDateColumn() createdAt: Date;
 }
 ```
-- Repository pattern: `@InjectRepository(Stake) repo: Repository<Stake>`.
+- Repository: `@InjectRepository(Stake) repo: Repository<Stake>`.
 - Transactions: `this.dataSource.transaction(async (manager) => {...})`.
-- Use **migrations**, keep `synchronize: false` in production (it can drop columns).
-- Money/crypto amounts: store as `numeric`/`decimal` or integer smallest unit, never JS float (`0.1 + 0.2` problem).
+- Keep `synchronize: false` in production. Use migrations.
 
-**Testing:** `Test.createTestingModule` for unit tests with mocked providers; `supertest` + `app.getHttpServer()` for e2e.
-
-**Scheduling:** `@nestjs/schedule` – `@Cron("0 0 * * *")`. With multiple instances, cron runs on every instance → use a lock / leader election (exactly the problem I solved – see [09 → Leader election](09-kafka-redis-messaging.md#leader-election-with-redis)).
+**Scheduling:** `@Cron("0 0 * * *")`. With many servers, it runs on every server → use a lock / leader election. See [09 → Leader election](09-kafka-redis-messaging.md#leader-election-with-redis).
 
 ---
 
@@ -319,46 +365,54 @@ export class Stake {
 
 ### Q. What does `@Injectable()` do?
 
-> 🎤 **Interview answer:** "`@Injectable()` marks a class as a provider that the Nest IoC container can manage. Nest can create it, cache it as a singleton by default, and inject it wherever it's needed. It also lets the class itself receive injected dependencies through its constructor, because it triggers the emission of the constructor's type metadata."
-
-Marks a class as a provider that Nest's DI container can manage and inject.
+> 🎤 **Interview answer:** "`@Injectable()` tells Nest: 'this class can be created and injected by you'. Nest then creates it (one shared copy by default), and passes it to any class that asks for it in its constructor."
 
 ### Q. How does Nest know what to inject?
 
-> 🎤 **Interview answer:** "With `emitDecoratorMetadata` enabled, the TypeScript compiler emits the constructor parameter types as metadata on decorated classes. Nest reads that metadata using `reflect-metadata`, sees, for example, that the constructor needs a UserRepository, and looks up the provider registered under that class token in the module's scope. For interfaces or primitives, there's no runtime type, which is why we use custom tokens with `@Inject('TOKEN')`."
-
-TypeScript emits constructor parameter types as metadata (`emitDecoratorMetadata`). Nest reads it with `reflect-metadata` and finds the matching provider.
+> 🎤 **Interview answer:** "TypeScript can save the **types of constructor parameters** as hidden information when the code is compiled (the `emitDecoratorMetadata` setting). Nest reads this information and sees, for example, 'this constructor needs a `UserRepository`'. Then it finds and passes that provider. Interfaces don't exist at runtime, so for them we use a custom token with `@Inject('TOKEN')`."
 
 ### Q. Custom decorators
 
-> 🎤 **Interview answer:** "Custom decorators remove repetition. A common one is a param decorator, `@CurrentUser()`, created with `createParamDecorator`, which pulls `request.user` out of the ExecutionContext, so controllers get the user directly instead of using `@Req()`. I also create metadata decorators like `@Roles()` or `@Public()` with SetMetadata, read by guards. And `applyDecorators` lets me combine several decorators, like guards plus Swagger auth, into one."
+> 🎤 **Interview answer:** "Custom decorators remove repeated code. A common one is `@CurrentUser()`, which gets the logged-in user from the request, so the controller doesn't need `@Req()`. I also made `@Roles()` and `@Public()` decorators that guards read."
 
 ```ts
-export const CurrentUser = createParamDecorator((_, ctx: ExecutionContext) => ctx.switchToHttp().getRequest().user);
-// use: findMine(@CurrentUser() user)
+export const CurrentUser = createParamDecorator(
+  (_, ctx: ExecutionContext) => ctx.switchToHttp().getRequest().user
+);
+
+// use
+@Get("me")
+findMine(@CurrentUser() user) { /* ... */ }
 ```
 
 ### Q. Lifecycle hooks
 
-> 🎤 **Interview answer:** "Nest calls lifecycle hooks on providers and modules at specific moments: `OnModuleInit` and `OnApplicationBootstrap` during startup, which are good for connecting to services or starting consumers, and `OnModuleDestroy`, `BeforeApplicationShutdown` and `OnApplicationShutdown` during shutdown. The shutdown hooks only run if `app.enableShutdownHooks()` is called. I used them for graceful shutdown: closing Redis connections and, in the price service, releasing the leader lock so another instance could take over immediately instead of waiting for the TTL."
-
-`OnModuleInit`, `OnApplicationBootstrap`, `OnModuleDestroy`, `BeforeApplicationShutdown`, `OnApplicationShutdown`. Enable `app.enableShutdownHooks()` for graceful shutdown (close Redis, release leader lock).
+> 🎤 **Interview answer:** "Nest calls special methods at certain moments:
+> - At startup: `OnModuleInit`, `OnApplicationBootstrap` – good for connecting to services.
+> - At shutdown: `OnModuleDestroy`, `OnApplicationShutdown` – good for closing connections.
+>
+> The shutdown ones work only if I call `app.enableShutdownHooks()`. I used them to close Redis, and in the price service, to **release the leader lock** on shutdown, so another server could take over immediately instead of waiting for the lock to expire."
 
 ### Q. Global vs scoped guards/pipes
 
-> 🎤 **Interview answer:** "There are three ways. `app.useGlobalGuards()` in main.ts applies it globally, but it's created outside the DI container, so it can't inject dependencies. Registering it as the `APP_GUARD` provider in a module also applies it globally, but with full DI, so it can inject services like the Reflector or ConfigService. That's what I prefer. Or `@UseGuards()` on a controller or method, to scope it locally. The same applies to pipes, interceptors and filters, with APP_PIPE, APP_INTERCEPTOR and APP_FILTER."
-
-`app.useGlobalGuards()` (no DI) vs providing `APP_GUARD` in a module (with DI) vs `@UseGuards()` on controller/method.
+> 🎤 **Interview answer:** "Three ways to apply a guard:
+> - `app.useGlobalGuards()` in `main.ts` – applies to all routes, but can't use dependency injection.
+> - `APP_GUARD` provider in a module – applies to all routes **and** can inject services. I prefer this.
+> - `@UseGuards()` on a controller or method – only for those routes.
+>
+> Same idea for pipes, interceptors and filters."
 
 ### Q. Fastify vs Express adapter?
 
-> 🎤 **Interview answer:** "Nest is platform-agnostic. Express is the default and has the biggest middleware ecosystem and community. Fastify has lower overhead and better raw throughput, plus schema-based serialisation. Switching is mostly one line with FastifyAdapter, but Express-specific middleware or `req` and `res` usage would need changes. For most of our services Express was fine, because the bottleneck was the database, not the framework."
+> 🎤 **Interview answer:** "Nest uses Express by default, which has the most middleware and community support. Fastify is faster. Switching is mostly one line. But for most of our services Express was fine, because the slow part was the database, not the framework."
 
-Fastify is faster with lower overhead; Express has a bigger middleware ecosystem. Switch with `NestFactory.create(AppModule, new FastifyAdapter())`.
+```ts
+NestFactory.create(AppModule, new FastifyAdapter());
+```
 
 ### Q. How do you add Swagger?
 
-> 🎤 **Interview answer:** "I install `@nestjs/swagger`, build a document config in main.ts with DocumentBuilder, setting the title, version and `addBearerAuth` for JWT, and serve it with `SwaggerModule.setup('docs', app, document)`. Then I annotate DTOs with `@ApiProperty` and controllers with `@ApiTags`, `@ApiBearerAuth` and response decorators. The CLI plugin can even generate many annotations automatically. Since the docs come from the same DTOs used for validation, they stay in sync with the code, and the frontend team used them as the contract."
+> 🎤 **Interview answer:** "I install `@nestjs/swagger`, set it up in `main.ts` with a title and JWT auth, and serve the docs at `/docs`. Then I add `@ApiProperty` to DTO fields and `@ApiTags` to controllers. Since the docs come from the same DTOs used for validation, they're always in sync with the code. The frontend team used them as the contract."
 
 ```ts
 const config = new DocumentBuilder().setTitle("Referral API").addBearerAuth().build();

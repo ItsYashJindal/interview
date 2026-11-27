@@ -29,11 +29,17 @@ Interviewers read your resume line by line and ask "**How exactly did you do thi
 
 **"Backend Engineer with 4.5 years designing and building Node.js/TypeScript microservices and distributed backend systems on AWS."**
 
-> 🎤 **Interview answer:** "If they ask about my summary: I've been a backend engineer for about 4.5 years, mainly with Node.js and TypeScript. The microservices I've built include the Referral and Staking services in NestJS at KindSwap, the Kafka-based notification and order-receipt consumers at Appsinvo, and the SAP–WMS integration interfaces at Air India *[adjust]*. By distributed systems I mean real problems like running 4 to 5 instances of a service that needed leader election, services communicating through Redis pub/sub and Kafka, shared state in Redis, and external systems like SAP and payment gateways. And by designing I mean that I decide service boundaries, database schemas, API contracts, sync versus event-based communication, and failure handling with retries, DLQs and idempotency, not just implementing tickets."
+**Q. What microservices have you built?**
 
-- *Q. What microservices have you built?* → Referral and Staking services in NestJS at KindSwap; Kafka-based notification/order-receipt consumers at Appsinvo; the SAP–WMS integration interfaces at Air India *[adjust]*.
-- *Q. What makes a system "distributed" in your work?* → Multiple instances of the same service (4–5 price service instances needing leader election), services communicating via Redis pub/sub and Kafka, shared state in Redis, external systems like SAP and payment gateways.
-- *Q. What does "designing" mean in your role?* → Deciding the service boundaries, DB schemas, API contracts, how services talk (sync vs events), failure handling (retries, DLQ, idempotency).
+> 🎤 **Interview answer:** "The Referral and Staking services in NestJS at KindSwap, the Kafka consumers for notifications and order receipts at Appsinvo, and the SAP–WMS integration services at Air India *[adjust]*."
+
+**Q. What makes your work "distributed"?**
+
+> 🎤 **Interview answer:** "Real problems that only happen when there are many servers or many systems. For example: running 4–5 copies of the price service, which needed leader election so only one sends updates; services talking to each other through Redis pub/sub and Kafka; shared data in Redis; and connecting to outside systems like SAP and payment gateways."
+
+**Q. What does "designing" mean in your role?**
+
+> 🎤 **Interview answer:** "It means I decide things, not just complete tickets: how to split the services, the database schema, the API format, whether services talk directly or through events, and how to handle failures with retries, dead-letter queues and idempotency."
 
 ---
 
@@ -41,14 +47,15 @@ Interviewers read your resume line by line and ask "**How exactly did you do thi
 
 **Bullet: "Built 8 end-to-end backend interfaces syncing data between Air India's SAP and Warehouse Management System (WMS), with validation and logging to prevent data loss in transit."**
 
-> 🎤 **Interview answer:** "At Notus I work on Air India's integration between SAP, their ERP, which holds purchase orders, material and vendor master data and finance, and the Warehouse Management System, which handles the physical receiving, storing and issuing of parts. They must stay in sync: SAP creates a PO, WMS needs it to receive goods, and WMS sends the goods receipt back so SAP updates stock and accounts. I built 8 interfaces covering things like material master, vendor master, purchase orders, goods receipts, goods issues, stock transfers, returns and stock reconciliation *[adjust to real names]*.
->
-> Technically, they're Node.js and TypeScript services that read from SAP's interface *[adjust: REST/OData/SOAP/middleware]*, validate and transform the data into the WMS format and send it, plus the reverse direction for GRNs. Every record is stored in PostgreSQL through Prisma with a status lifecycle: received, validated, sent, acknowledged or failed."
-
 **Q. What is SAP and WMS? What data flows between them?**
-SAP is Air India's ERP – it holds purchase orders (POs), materials/parts master data, vendors, and financial records. WMS manages the physical warehouse – receiving goods, storing, issuing parts. They must stay in sync: e.g. SAP creates a PO → WMS needs it to receive goods → WMS confirms receipt (GRN) → SAP updates stock/accounts.
 
-**Q. What were the 8 interfaces?** *[adjust to real names]* e.g.:
+> 🎤 **Interview answer:** "**SAP** is Air India's main business system (ERP). It holds purchase orders, parts / material details, vendors and finance. **WMS** (Warehouse Management System) handles the actual warehouse: receiving goods, storing them and issuing parts.
+>
+> They must stay in sync. For example: SAP creates a purchase order → WMS needs it to receive the goods → WMS sends back a goods receipt (GRN) → SAP updates stock and accounts.
+>
+> I built 8 interfaces for this, like material master, vendor master, purchase orders, goods receipts, goods issues, stock transfers, returns and stock reconciliation *[adjust to real names]*."
+
+**The 8 interfaces** *[adjust to real names]*:
 1. Material master (SAP → WMS)
 2. Vendor master (SAP → WMS)
 3. Purchase orders (SAP → WMS)
@@ -56,45 +63,52 @@ SAP is Air India's ERP – it holds purchase orders (POs), materials/parts maste
 5. Goods issue (WMS → SAP)
 6. Stock transfer
 7. Returns to vendor
-8. Stock/inventory reconciliation
+8. Stock reconciliation
 
-**Q. How does the integration work technically?** *[adjust: REST/OData/SOAP/files/middleware]*
-- Node.js + TypeScript services; data read from SAP's interface (e.g. REST/OData/SOAP/IDoc via middleware or file drop *[adjust]*), transformed to WMS format and sent; reverse direction for GRN.
-- Each record stored in PostgreSQL (via Prisma) with a status: `received → validated → sent → acknowledged / failed`.
-- Scheduled jobs and/or triggers to pull/push data *[adjust]*.
+**Q. How does the integration work technically?**
+
+> 🎤 **Interview answer:** "They are Node.js + TypeScript services. They read data from SAP *[adjust: REST / OData / SOAP / middleware / file]*, check it, convert it to the format WMS expects, and send it. GRNs go the other way, from WMS to SAP. Every record is saved in PostgreSQL through Prisma, with a status: received → validated → sent → acknowledged, or failed. Scheduled jobs pull and push the data *[adjust]*."
 
 **Q. "Prevent data loss in transit" – how exactly?**
 
-> 🎤 **Interview answer:** "There are six things. First, validation before sending: mandatory fields, quantities, units, PO exists. Invalid records go to a failed state with a clear reason instead of breaking silently. Second, persist first, then send: every record is saved in our database before calling the other system, so nothing is lost if a call fails midway. Third, logging of every request and response with business references like the PO or GRN number, so any record can be traced. Fourth, automatic retries with backoff for temporary failures, and after the maximum attempts the record is marked failed and we notify. Fifth, idempotent processing with upserts by business reference, so a re-sent record never creates duplicates. And sixth, reconciliation between the systems *[adjust if done]*."
+> 🎤 **Interview answer:** "Six things:
+> 1. **Check before sending** – required fields, quantities, units, does the PO exist. Bad records are marked 'failed' with a clear reason, instead of breaking silently.
+> 2. **Save first, then send** – every record is saved in our DB **before** calling the other system. So if a call fails in the middle, nothing is lost.
+> 3. **Log everything** – every request and response, with the PO or GRN number, so any record can be traced.
+> 4. **Automatic retries** for temporary failures, waiting longer each time. After the max tries, mark it failed and notify.
+> 5. **Safe to resend** – the receiving side uses 'update if exists, else create' by PO / GRN number, so sending a record again never creates duplicates.
+> 6. **Regular cross-check** between the two systems *[adjust if done]*."
 
-- **Validation** before sending (mandatory fields, quantities, units, PO exists) → invalid records go to a failed state with a reason instead of silently breaking.
-- **Persist first, then send** – every record is saved in our DB before calling the other system, so nothing is lost if a call fails.
-- **Logging** of every request/response with reference numbers (PO number, GRN number).
-- **Retries** with backoff for temporary failures; after max retries mark failed + notify.
-- **Idempotent processing** – upsert by unique business reference so a re-sent record doesn't create duplicates.
-- **Reconciliation** – compare records between systems *[adjust if done]*.
+**Q. Why PostgreSQL here instead of MongoDB?**
 
-**Q. Why PostgreSQL here instead of MongoDB?** Data is highly relational (PO → PO lines → GRN → GRN lines → materials → vendors), needs strict consistency and transactions. SQL is the natural fit.
+> 🎤 **Interview answer:** "Because this data is **strongly connected**: a PO has lines, GRNs point to PO lines, and everything links to materials and vendors. It needs foreign keys, strict correctness, and transactions across tables, like creating a GRN and updating the PO's received quantity together. That's exactly what a SQL database is built for. I used MongoDB where data was document-shaped, but here SQL was the natural choice."
 
-> 🎤 **Interview answer:** "Because this data is strongly relational: a PO has lines, GRNs reference PO lines, and everything links to materials and vendors. It needs foreign keys, strict consistency and multi-table transactions, for example creating a GRN and updating the PO's received quantity together. That's exactly what a relational database is built for. I used MongoDB in projects where the data was document-shaped, but here SQL was the natural fit."
+**Q. Why Prisma?**
 
-**Q. Why Prisma?** Type-safe queries generated from schema (fits TypeScript), easy migrations, readable code, `$transaction` support.
-
-> 🎤 **Interview answer:** "Prisma generates a fully typed client from the schema file, which fits our TypeScript codebase perfectly: wrong field names or types fail at compile time. It also gives clean, versioned migrations, very readable query code, and `$transaction` for multi-step writes like GRN creation. For the rare complex report query, we can still drop down to raw SQL."
+> 🎤 **Interview answer:** "Prisma creates fully typed database code from the schema file, which fits our TypeScript code perfectly. A wrong field name fails while writing code, not in production. It also gives clean migrations, very readable queries, and `$transaction` for multi-step writes like GRN creation. For a rare complex report, we can still write raw SQL."
 
 **Bullet: "Built a Next.js GRN dashboard for goods-receipt entry against SAP purchase orders, with validation, log monitoring, notifications and analytics."**
 
-> 🎤 **Interview answer:** "A GRN, goods receipt note, is the record that goods ordered on a PO were physically received: what, how much and in what condition. I built a Next.js dashboard where warehouse users enter GRNs against SAP purchase orders. The validations are that received quantity can't exceed the pending PO quantity, the PO must be open, mandatory fields must be present, and batch or serial numbers are required for parts *[adjust]*. These checks run on the frontend for UX, and on the backend as the real check.
->
-> To stop two users over-receiving the same PO line at the same time, the backend uses a conditional update, only incrementing received if received plus quantity is less than or equal to ordered, inside a transaction. The dashboard also has interface log monitoring, which shows which records succeeded or failed, with the reasons and a retry option, notifications for failed syncs or pending GRNs, and analytics like GRNs per day, pending POs and failure rates *[adjust]*. I chose Next.js for routing, fast server-rendered pages and API routes in one React codebase."
+**Q. What is a GRN, and what does the dashboard do?**
 
-- *Q. What is a GRN?* Goods Receipt Note – a record that goods ordered in a PO were physically received (what, how much, condition).
-- *Q. What validations?* Received quantity can't exceed pending PO quantity, PO must be open, mandatory fields, batch/serial numbers for parts *[adjust]*; both on frontend (UX) and backend (real check).
-- *Q. How do you prevent two users receiving more than the PO quantity at the same time?* DB transaction + row lock or conditional update: `UPDATE po_lines SET received = received + $q WHERE id = $id AND received + $q <= ordered`.
-- *Q. Log monitoring?* Dashboard page showing interface logs – which records succeeded/failed, error reasons, retry option *[adjust]*.
-- *Q. Notifications?* Alerts on failed syncs or pending GRNs (email/in-app) *[adjust]*.
-- *Q. Analytics?* Counts of GRNs per day, pending POs, failure rates *[adjust]*.
-- *Q. Why Next.js?* Routing, server-side rendering for fast loads, API routes, one React codebase. See [05 → Next.js](05-react.md#nextjs-basics).
+> 🎤 **Interview answer:** "A **GRN (Goods Receipt Note)** is the record that goods ordered on a PO have actually arrived: what, how many, and in what condition.
+>
+> I built a Next.js dashboard where warehouse users enter GRNs against SAP purchase orders.
+> - **Checks:** received quantity can't be more than the pending PO quantity, the PO must be open, required fields must be filled, batch / serial numbers for parts *[adjust]*. These run on the frontend for a good experience, and on the backend as the real check.
+> - **Two users at the same time:** to stop two users receiving more than the PO quantity at the same moment, the backend uses a single conditional update inside a transaction: 'add to received only if received + qty ≤ ordered'.
+> - **Log monitoring:** a page that shows which records succeeded or failed, with the reason and a 'Retry' button.
+> - **Notifications** for failed syncs or pending GRNs, and **analytics** like GRNs per day, pending POs and failure rates *[adjust]*.
+>
+> I chose Next.js because it gives routing, fast server-rendered pages and API routes in one React codebase."
+
+```sql
+UPDATE po_lines
+SET received = received + $qty
+WHERE id = $id AND received + $qty <= ordered;
+-- 0 rows updated → would go over the PO quantity → reject
+```
+
+See [05 → Next.js](05-react.md#nextjs-basics).
 
 ---
 
@@ -104,54 +118,58 @@ SAP is Air India's ERP – it holds purchase orders (POs), materials/parts maste
 
 **Q. Explain the Referral service.**
 
-> 🎤 **Interview answer:** "Every user gets a unique referral code. When a referred user signs up or does a qualifying action like trading or staking *[adjust]*, the referrer earns a reward. The service tracks referral relationships, qualifying events, reward calculation and pending versus paid rewards. The important integrity rules are enforced at the database level: a unique index on the referral code, preventing self-referral, and a unique constraint on referrer, referee and event type, so the same event can never be rewarded twice, even if it's delivered twice."
-
-Users get a referral code; when a referred user signs up/trades/stakes *[adjust]*, the referrer earns a reward. Service tracks referral relationships, qualifying events, reward calculation, and pending/paid rewards.
-Key points: unique referral code index, prevent self-referral and duplicate rewards (unique constraint on `(referrerId, refereeId, eventType)`), rewards calculated from events.
+> 🎤 **Interview answer:** "Every user gets a unique referral code. When someone signs up with that code and does a qualifying action, like trading or staking *[adjust]*, the person who referred them earns a reward. The service tracks who referred whom, the qualifying events, the reward amount, and whether it's pending or paid.
+>
+> The important rules are enforced **in the database**: a unique referral code, no self-referral, and a unique rule on (referrer, referee, event type), so the same event can never be rewarded twice, even if the event arrives twice."
 
 **Q. Explain the Staking service.**
 
-> 🎤 **Interview answer:** "In the Staking service, users lock tokens in a pool for a period to earn rewards. The service manages pools, user stakes with amount, start time and lock period, reward calculation, and unstake and claim requests *[adjust]*. One critical detail: amounts are stored as high-precision numeric values or strings, never JavaScript floats, because crypto amounts have up to 18 decimals and floating-point errors would mean real money errors."
-
-Users lock tokens for a period to earn rewards. Service manages pools, user stakes (amount, start, lock period), reward calculation, and unstake/claim requests *[adjust]*. Amounts stored as `numeric` / strings (big decimals), never JS floats.
+> 🎤 **Interview answer:** "Users lock their tokens in a pool for some time to earn rewards. The service manages pools, each user's stake (amount, start time, lock period), reward calculation, and unstake / claim requests *[adjust]*. One critical detail: amounts are saved as high-precision numbers or strings, **never** JavaScript decimal numbers. Crypto amounts can have 18 decimal places, and small rounding errors would mean real money errors."
 
 **Q. What is Auth0 RBAC and how did you use it?**
 
-> 🎤 **Interview answer:** "Auth0 is a hosted identity provider, and RBAC means role-based access control. Roles and permissions, like `payout:approve` or `admin`, are defined in Auth0 and included in the access token. In our NestJS services, a JWT guard verifies the token's RS256 signature using Auth0's public JWKS keys, plus the audience and issuer. Then a custom permissions guard, driven by a `@Roles` decorator, checks the required permission on each route. So no service handles passwords, and access is managed centrally."
+> 🎤 **Interview answer:** "Auth0 is an outside service that handles login for us. RBAC means **role-based access control**. Roles and permissions, like `payout:approve` or `admin`, are set up in Auth0, and Auth0 puts them inside the user's token. In our NestJS services:
+> 1. A JWT guard checks the token is real, using Auth0's public key.
+> 2. A permissions guard, with a `@Roles()` decorator, checks if the user has the permission needed for that route.
+>
+> So our services never handle passwords, and access is managed in one place."
 
-Auth0 is a hosted login/identity provider. RBAC = role-based access control. Roles and permissions (e.g. `payout:approve`, `admin`) are defined in Auth0 and added to the access token. Our NestJS services verify the token (RS256 via Auth0's public JWKS key) in a JWT guard, then a **Roles/Permissions guard** checks the required permission on each route. Code in [08 → Guards](08-nestjs.md#7-guards-and-rbac-with-auth0).
+Code in [08 → Guards](08-nestjs.md#7-guards-and-rbac-with-auth0).
 
 **Q. What is a multisig wallet and "batch payouts"?**
 
-> 🎤 **Interview answer:** "A multisig wallet needs approval from M of N owners, for example 2 of 3, before a transaction executes, so no single person or single compromised key can move company funds. For batch payouts *[adjust]*, a scheduled job calculates the referral and staking rewards due and creates a payout batch, a list of addresses and amounts, in the database with status pending. That batch is proposed as a transaction to the multisig wallet, the required signers approve it, and once it executes on-chain, we store the transaction hash and mark each payout as paid. Failed ones are retried in the next batch. Batching means fewer on-chain transactions, so lower fees and fewer approvals. To avoid double payouts, each reward can belong to only one batch, enforced by status and a unique constraint, and processing is idempotent by transaction hash."
-
-- A **multisig (multi-signature) wallet** needs approval from **M of N** owners (e.g. 2 of 3) before a transaction executes. Protects company funds – no single person or single compromised key can move money.
-- **Batch payout flow** *[adjust]*:
-  1. A scheduled job calculates rewards due (referral/staking) and creates a **payout batch** (list of user addresses + amounts) in DB with status `pending`.
-  2. The batch transaction is proposed to the multisig wallet.
-  3. Required signers approve.
-  4. Once executed on-chain, we track the transaction hash and mark each payout `paid`; failed ones are retried in the next batch.
-- Why batch? Fewer on-chain transactions → lower fees and fewer approvals.
-- Avoid double payout: each reward row can be in only one batch (status + unique constraint); idempotent processing by tx hash.
+> 🎤 **Interview answer:** "A **multisig wallet** needs approval from several owners, for example 2 out of 3, before any money can move. So no single person, or single stolen key, can move company funds.
+>
+> **Batch payouts** *[adjust]*:
+> 1. A scheduled job calculates the referral and staking rewards that are due, and creates a **payout batch** (list of wallet addresses + amounts) in the DB with status 'pending'.
+> 2. The batch is sent to the multisig wallet as one transaction.
+> 3. The required people approve it.
+> 4. Once it runs on the blockchain, we save the transaction hash and mark each payout 'paid'. Failed ones go into the next batch.
+>
+> **Why batch?** Fewer blockchain transactions → lower fees and fewer approvals.
+> **No double payouts:** each reward can be in only one batch (status + unique rule), and processing is checked by the transaction hash."
 
 **Q. How did the two services communicate? Why Redis pub/sub?**
 
-> 🎤 **Interview answer:** "They communicated with events over Redis pub/sub. For example, when a stake was created, the Staking service published an event, and the Referral service subscribed and processed referral rewards *[adjust events]*. We chose Redis because it was already in our stack, it's very low latency and simple to use.
+> 🎤 **Interview answer:** "They sent events through Redis pub/sub. For example, when a stake was created, the Staking service sent an event, and the Referral service picked it up and processed the referral reward *[adjust events]*. We chose Redis because it was already in our setup, it's very fast, and simple to use.
 >
-> If they ask about the limitation, I'm upfront: Redis pub/sub doesn't persist messages, so if a subscriber is down, it misses events. We handled that by also storing the events in the database and running a periodic reconciliation job *[adjust]*. If I were designing it today for critical reward flows, I'd use Redis Streams or Kafka with consumer groups and acknowledgements."
+> If they ask about the weakness, I'm honest: Redis pub/sub **doesn't save messages**. If the Referral service is down at that moment, it misses the event. We handled that by also saving events in the DB and running a regular job to catch missed ones *[adjust]*. If I designed it today for reward events, I'd use Redis Streams or Kafka, which save messages and support acknowledgements."
 
-Events like `stake.created` were published on Redis channels and the other service subscribed *[adjust events]*. Redis was already in the stack, low latency, simple.
-**Follow-up – "Redis pub/sub loses messages if a service is down. How did you handle that?"** → Honest answer options: the events were also stored in DB and a periodic job reconciled missed ones *[adjust]*; or "for critical flows I would use Redis Streams or Kafka with consumer groups and acks". See [09 → Redis pub/sub](09-kafka-redis-messaging.md#redis-pubsub).
+See [09 → Redis pub/sub](09-kafka-redis-messaging.md#redis-pubsub).
 
 **Bullet: "Designed Redis-based leader election so only one of 4–5 instances publishes real-time crypto price updates, eliminating duplicates; monitored with AWS CloudWatch."**
 
-> 🎤 **Interview answer:** "The price service ran on 4 to 5 instances, and each one was publishing price updates, which caused duplicates for users and extra calls to the price provider. Each instance tries `SET leader myId NX PX 10000`, so only one succeeds and becomes leader. The leader renews the key every 3 seconds with a Lua script that first checks it's still the owner. Others keep trying, so if the leader crashes, the key expires and another instance takes over in about 10 seconds. If the leader fails to renew, it stops publishing immediately. Prices come from a price provider *[adjust]*, and the leader pushes updates to clients over Socket.io *[adjust]*. In CloudWatch we logged leadership changes, errors and publish rate, with alarms when there was no leader for too long or errors spiked *[adjust]*."
+> 🎤 **Interview answer:** "The price service ran on 4–5 servers, and **each** one was sending price updates, so users got duplicates and we called the price provider too many times.
+>
+> I fixed it with leader election in Redis:
+> - Each server tries `SET leader myId NX PX 10000`. `NX` means only one can succeed, and that one becomes the **leader**. The key expires in 10 seconds.
+> - The leader renews the key every 3 seconds, but only if it still owns it.
+> - The others keep trying. If the leader crashes, its key expires, and another server takes over within about 10 seconds.
+> - If the leader fails to renew, it stops sending immediately.
+>
+> Prices come from a price provider *[adjust]*, and the leader sends updates to users through Socket.io *[adjust]*. In CloudWatch we logged leader changes, errors and how many updates were sent, with alerts if there was no leader for too long *[adjust]*."
 
-Full answer + follow-ups in [09 → Leader election](09-kafka-redis-messaging.md#leader-election-with-redis). Short version:
-"Each instance tries `SET leader <myId> NX PX 10000`. Only one succeeds and becomes leader; it renews the key every 3 seconds using a Lua script that checks it is still the owner. Others keep trying. If the leader crashes the key expires and another instance takes over in about 10 seconds. If the leader fails to renew, it stops publishing immediately. We logged leadership changes and publish counts to CloudWatch and set alarms."
-
-- *Q. Where did prices come from and how did they reach users?* From a price provider API/websocket *[adjust]*; the leader publishes updates to clients via Socket.io/websocket *[adjust]* (and/or Redis pub/sub to other instances that hold client connections).
-- *Q. What did you monitor in CloudWatch?* Logs for leader changes, errors, publish rate; alarms when no leader for > X seconds or error spikes *[adjust]*.
+Full answer + follow-ups in [09 → Leader election](09-kafka-redis-messaging.md#leader-election-with-redis).
 
 ---
 
@@ -159,79 +177,85 @@ Full answer + follow-ups in [09 → Leader election](09-kafka-redis-messaging.md
 
 ### Led and mentored 6 junior developers
 
-> 🎤 **Interview answer:** "At Appsinvo I led and mentored 6 junior developers. My approach was practical. I did code reviews where I explained why, not just what to change. I pair-programmed on tough tasks, broke big features into smaller, clear tasks, set shared standards for folder structure, error handling and naming, helped with debugging, and ran short knowledge-sharing sessions *[adjust]*. If a junior kept making the same mistake, I explained the reason behind the fix, gave a small example or checklist, paired with them once, reviewed again, and appreciated the improvement. I was also involved in client calls: gathering requirements, clarifying edge cases, giving estimates, demoing features and handling change requests."
+> 🎤 **Interview answer:** "At Appsinvo I led and mentored 6 junior developers. I kept it practical:
+> - **Code reviews** where I explained **why**, not just what to change.
+> - **Pair programming** on hard tasks.
+> - Breaking big features into **small, clear tasks**.
+> - **Shared standards** for folder structure, error handling and naming.
+> - Helping with **debugging**, and short **knowledge-sharing sessions** *[adjust]*.
+>
+> If a junior kept making the same mistake, I explained the reason behind the fix, gave a small example or checklist, sat with them once, reviewed again, and appreciated the improvement.
+>
+> I was also in client calls: collecting requirements, clarifying edge cases, giving estimates, showing demos and handling change requests."
 
-- *Q. How did you mentor?* Code reviews with explanations, pair programming on tough tasks, broke features into smaller tasks, shared coding standards (folder structure, error handling, naming), helped with debugging, conducted short knowledge sessions *[adjust]*.
-- *Q. What did you look for in code reviews?* See [11 → E18](11-scenario-questions.md#e18-code-review--what-do-you-check).
-- *Q. A junior keeps making the same mistake – what do you do?* Explain the reason (not just the fix), give a small example/checklist, pair once, then review again; appreciate improvement.
-- *Q. How did client calls go?* Gathered requirements, clarified edge cases, gave estimates, demoed features, handled change requests.
+What I check in code reviews: see [11 → E18](11-scenario-questions.md#e18-code-review--what-do-you-check).
 
 ### Cut a user-listing API from 4.5 s to 550 ms
 
-> 🎤 **Interview answer:** "This is the story I'm proudest of on the performance side. The admin user-listing API, with filters like status, date range, search and role *[adjust]*, was taking around 4.5 seconds, and it was getting worse as the user base grew. I logged the timing of each step and ran the query with `explain('executionStats')`. It was doing a full collection scan because no index matched the filters, it returned full user documents with nested data, and part of the filtering was happening in Node after loading the data *[adjust]*.
+> 🎤 **Interview answer (practise this – it's your best number):**
+> - "**Situation:** The admin user-listing API, with filters like status, date range, search and role *[adjust]*, took about **4.5 seconds**, and got slower as users grew.
+> - **Finding the cause:** I logged the time of each step and ran the query with `explain('executionStats')`. I found three problems:
+>   1. It was reading **every document**, because no index matched the filters.
+>   2. It returned **full user documents** with lots of nested data.
+>   3. Some **filtering was done in Node** after loading the data *[adjust]*.
+> - **What I changed:**
+>   1. Added **compound indexes** that match the filters and sort (ESR rule), so the query used the index.
+>   2. Returned **only the fields the list needs** (name, email, status, date), with `.lean()` – much smaller response.
+>   3. Moved **all filtering and pagination into the DB query**.
+>   4. Ran the count query and data query **in parallel** *[adjust]*.
+> - **Result:** about **550 ms** – around 88% faster, with lower DB CPU. I checked it by comparing response times before and after, on the same amount of data.
 >
-> I fixed it in four steps. I added compound indexes matching the filters and sort, following the ESR rule, so the query moved to an index scan. I used projection to return only the fields the list needed, with `.lean()`, so the payload was much smaller. I moved all filtering and pagination into the database query. And I ran the count and data queries in parallel *[adjust]*. The result was about 550 milliseconds, around 88% faster, with lower database CPU. I verified it by comparing response times before and after on the same data volume. If they ask why not just cache: the filters vary a lot and the data changes often, so fixing the query and indexes was the right first step, and caching could be added later for common filter combinations."
-
-**Story (practise this – it's your best number):**
-- *Situation:* admin user-listing API with filters (status, date range, search, role *[adjust]*) took ~4.5 s; it was slower as users grew.
-- *How I found the cause:* logged timings for each step and used `explain("executionStats")` – the query was doing a **collection scan** (no matching index), the API returned **full user documents** with nested data, and some **filtering happened in Node after loading data** *[adjust]*.
-- *What I changed:*
-  1. Added **compound indexes** matching the filters and sort (ESR rule) – query moved to IXSCAN.
-  2. **Projection** – returned only fields the list needed (name, email, status, createdAt) and used `.lean()` → much smaller payload.
-  3. Moved **filtering and pagination into the DB query** instead of JS.
-  4. Ran count and data queries in parallel / with `$facet` *[adjust]*.
-- *Result:* ~**550 ms** (88% faster), less DB CPU.
-- *Follow-ups:* "Why not cache?" → filters vary a lot and data changes often, so indexes and query fixes were the right first step; caching could be added for common filter combinations. "How did you verify?" → compared response times before/after in logs/Postman under the same data volume.
+> If they ask 'why not just cache?': the filters change a lot and the data changes often, so fixing the query and indexes was the right first step. Caching could be added later for common filters."
 
 ### Introduced Apache Kafka with a dead-letter queue
 
-> 🎤 **Interview answer:** "Before Kafka, notifications and order receipts were sent inside the order API request, so responses were slow, and if the email or SMS provider failed, either the order request failed or the message was lost. I introduced Kafka: the order API publishes an event like `order.placed` and returns, and consumers handle notifications and receipts asynchronously *[adjust topic names]*. Events are keyed by orderId so all events for one order stay in order.
+> 🎤 **Interview answer:** "**Before:** notifications and order receipts were sent **inside** the order API request. So the API was slow, and if the email or SMS provider failed, either the order failed or the message was lost.
 >
-> On failure, a consumer retries a few times with backoff via a retry topic, and after the maximum attempts it publishes the message to a DLQ topic with the error details, commits the offset so the main flow continues, and we monitor and replay from the DLQ. To avoid duplicate emails, consumers are idempotent: the event id is checked and stored before sending. We chose Kafka over RabbitMQ or SQS because multiple consumers needed the same events and replay was useful *[adjust honestly]*."
+> **What I did:** I added Kafka. Now the order API just sends an event like `order.placed` and returns. Separate consumers send the notifications and receipts in the background *[adjust topic names]*. Events use `orderId` as the key, so all events of one order stay in order.
+>
+> **When something fails:** the consumer retries a few times through a retry topic, waiting longer each time. After the max tries, it sends the message to a **DLQ topic** with the error details, and the main flow continues. We watch the DLQ, fix the problem, and resend the messages.
+>
+> **No duplicate emails:** consumers check and save the event id before sending.
+>
+> **Why Kafka and not RabbitMQ or SQS?** Several consumers needed the same events, and being able to replay them was useful *[adjust honestly]*."
 
-- *Q. Why Kafka?* Notifications and order receipts were sent **inside the API request** → slow responses and if email/SMS provider failed, the order API failed or the message was lost. Moving them to Kafka made the order API faster and made sending reliable with retries.
-- *Q. Topics?* e.g. `order.placed`, `notification.send`, plus `*.retry` and `*.dlq` *[adjust]*.
-- *Q. How does your DLQ work?* Retry N times with backoff → then publish to DLQ topic with error details → commit offset → monitor and replay. See [09 → DLQ](09-kafka-redis-messaging.md#retries-and-dead-letter-queue-dlq).
-- *Q. How did you avoid duplicate emails?* Consumers are idempotent – event id stored/checked before sending.
-- *Q. Partitions and keys?* Key by `orderId`/`userId` so events for one order stay in order *[adjust partition count]*.
-- *Q. Why Kafka over RabbitMQ/SQS?* *[adjust honestly]* e.g. multiple consumers needed the same events (notification + receipts + analytics), replay ability, team/infra already had it. See [comparison](09-kafka-redis-messaging.md#kafka-vs-rabbitmq-vs-sqs).
+More: [09 → DLQ](09-kafka-redis-messaging.md#retries-and-dead-letter-queue-dlq), [comparison](09-kafka-redis-messaging.md#kafka-vs-rabbitmq-vs-sqs).
 
 ### Integrated 5 payment gateways with idempotency keys
 
-> 🎤 **Interview answer:** "I integrated Razorpay, Stripe, Cashfree, MyFatoorah and Tamara, because different clients and regions needed different ones: Razorpay and Cashfree for India, Stripe for international cards, MyFatoorah for the Middle East, and Tamara for buy-now-pay-later in the Gulf *[adjust]*. To keep the code clean, I defined a common PaymentGateway interface, with createOrder, verifyPayment, handleWebhook, refund and getStatus, and one adapter class per gateway, with a factory choosing the gateway by config, country or currency. The business code never knows which gateway is used.
+> 🎤 **Interview answer:** "I integrated **Razorpay, Stripe, Cashfree, MyFatoorah and Tamara**. Different clients and regions needed different ones: Razorpay and Cashfree for India, Stripe for international cards, MyFatoorah for the Middle East, and Tamara for buy-now-pay-later in the Gulf *[adjust]*.
 >
-> For idempotency, each payment attempt has a unique key sent in a header and stored with a unique constraint, together with the result, so a retry with the same key returns the stored result instead of charging again. Stripe supports this natively, and for the others we enforced it on our side *[adjust]*. Webhooks are verified with HMAC signatures, de-duplicated with a unique index on the gateway's payment id, acknowledged quickly and processed async, with a reconciliation job for pending payments. Refunds are also idempotent by refund reference, and amounts are stored in the smallest currency unit. Some Gulf currencies, like KWD, have 3 decimals, which is an easy thing to get wrong."
+> **Keeping the code clean:** I made one common `PaymentGateway` interface with `createOrder`, `verifyPayment`, `handleWebhook`, `refund` and `getStatus`, and one class per gateway. A factory picks the right gateway by country or currency. The business code never knows which gateway is used.
+>
+> **Idempotency:** each payment attempt has a unique key, sent in a header and saved with a unique rule, together with the result. If the same key comes again, we return the saved result instead of charging again. Stripe supports this itself; for the others we did it on our side *[adjust]*.
+>
+> **Webhooks:** check the signature, unique index on the gateway's payment id (so duplicates are ignored), reply fast, process in the background, and a job checks payments stuck in 'pending'.
+>
+> **Amounts** are saved in the smallest unit (paise / cents). Some Gulf currencies like KWD have **3** decimal places, which is easy to get wrong."
 
-Razorpay, Stripe, Cashfree, MyFatoorah, Tamara.
-- *Q. Why 5?* Different clients/regions: Razorpay & Cashfree for India, Stripe for international cards, MyFatoorah for Middle East (Kuwait/Saudi), Tamara for buy-now-pay-later in the Gulf *[adjust]*.
-- *Q. How did you keep code clean with 5 gateways?* A common `PaymentGateway` interface (`createOrder`, `verifyPayment`, `handleWebhook`, `refund`, `getStatus`) with one adapter class per gateway; a factory picks the gateway by config/country/currency. Business code doesn't know which gateway is used.
-- *Q. What exactly is the idempotency key and where is it stored?* Unique key per payment attempt (UUID from client or generated from `orderId + attempt`), sent in header; stored in DB/Redis with unique constraint and the result. A retry with the same key returns the stored result instead of creating a new charge. Stripe also supports an `Idempotency-Key` header natively; for others we enforced it on our side *[adjust]*. Details in [07 → Idempotency](07-apis-backend.md#q-what-is-idempotency-and-how-do-you-implement-it).
-- *Q. Webhook handling?* Verify signature (HMAC), unique index on gateway payment/event id, respond 200 fast, process async, reconcile pending payments with a status API job.
-- *Q. Refunds?* Refund API per gateway; store refund records; idempotent by refund reference.
-- *Q. Currency/amount?* Stored in smallest unit (paise/fils/cents); note some currencies (KWD) have 3 decimals.
+Details in [07 → Idempotency](07-apis-backend.md#q-what-is-idempotency-and-how-do-you-implement-it).
 
 ### REST APIs and real-time chat (Socket.io, JWT)
 
-> 🎤 **Interview answer:** "For the chat, the JWT is verified in Socket.io's handshake middleware, `io.use`, so unauthenticated sockets never connect. Each user joins a room named after their user id. Messages are saved to the database before being emitted to the receiver's room, so nothing is lost, with delivered and read acknowledgements, and history loaded with cursor pagination. To run on multiple instances, we used the Socket.io Redis adapter *[adjust]*."
+> 🎤 **Interview answer:** "For chat, I check the JWT when the Socket.io connection opens (`io.use` middleware), so users without a valid token can't connect. Each user joins a room named after their user id. Messages are **saved in the DB first**, then sent to the receiver's room, so nothing is lost. There are 'delivered' and 'read' updates, and old messages load page by page. To run on many servers, we used the Socket.io Redis adapter *[adjust]*."
 
-- JWT verified in Socket.io handshake middleware (`io.use`), user joins room = their userId, messages saved to DB before emit, delivered/read acks, history via cursor pagination, Redis adapter for multiple instances *[adjust]*. See [10 → Chat](10-system-design.md#design-a-chat-system).
+See [10 → Chat](10-system-design.md#design-a-chat-system).
 
 ### Jest unit tests
 
-> 🎤 **Interview answer:** "I wrote Jest unit tests mainly for services and business logic, like price calculations, coupon rules and payment state transitions, plus utilities and middleware. Database models and payment gateways were mocked with `jest.mock`, so tests were fast and didn't depend on external systems *[adjust]*. Unit tests check one piece in isolation, and for flows across layers we used integration tests with supertest and Postman collections."
+> 🎤 **Interview answer:** "I wrote Jest unit tests mainly for business logic, like price calculation, coupon rules and payment status changes, plus helpers and middleware. The database and payment gateways were replaced with fakes using `jest.mock`, so tests were fast and didn't depend on outside systems *[adjust]*. Unit tests check one piece alone. For full flows, we used integration tests with supertest, and Postman collections."
 
-- *Q. What did you test?* Services/business logic (price calc, coupon rules, payment state changes), utils, middleware; mocked DB models and gateways with `jest.mock` *[adjust]*.
-- *Q. Unit vs integration?* See [15 → Jest](15-testing-git-devops.md#jest-and-testing).
+See [15 → Jest](15-testing-git-devops.md#jest-and-testing).
 
 ### Deployed on AWS (EC2, S3, Lambda) with Nginx and PM2
 
-> 🎤 **Interview answer:** "Node apps ran on EC2 under PM2 in cluster mode, which gave us auto-restart, logs, a startup script after reboot, and `pm2 reload` for zero-downtime deploys. Nginx sat in front for SSL *[adjust: Let's Encrypt or ACM]*, reverse proxying, gzip and the WebSocket upgrade headers needed for Socket.io. S3 stored images and invoices, accessed through pre-signed URLs, and Lambda handled *[adjust: e.g. image resizing on upload or scheduled jobs]*."
+> 🎤 **Interview answer:**
+> - "**EC2** ran the Node apps with **PM2** in cluster mode: auto-restart, logs, starts again after a server reboot, and `pm2 reload` for deploys without downtime.
+> - **Nginx** in front: HTTPS *[adjust: Let's Encrypt / ACM]*, forwarding requests, gzip, and the special headers needed for Socket.io.
+> - **S3** for images and invoices, with pre-signed URLs.
+> - **Lambda** for *[adjust: e.g. resizing images on upload, scheduled jobs]*."
 
-- EC2 runs Node with **PM2** (cluster mode, auto-restart, logs, `pm2 reload` for zero downtime, startup script after reboot).
-- **Nginx** in front: SSL (Let's Encrypt/ACM *[adjust]*), reverse proxy, gzip, websocket upgrade headers for Socket.io.
-- **S3** for images/invoices with pre-signed URLs.
-- **Lambda** for *[adjust: e.g. image resize on upload, scheduled jobs]*.
-- See [15 → PM2 & Nginx](15-testing-git-devops.md#pm2-and-nginx).
+See [15 → PM2 & Nginx](15-testing-git-devops.md#pm2-and-nginx).
 
 ---
 
@@ -239,31 +263,31 @@ Razorpay, Stripe, Cashfree, MyFatoorah, Tamara.
 
 **Bullet: "Built a business website and internal dashboard end to end (Node.js, Express.js, React.js, MongoDB), with automated receipt emails, notifications and stock recalculation on each booking."**
 
-> 🎤 **Interview answer:** "At Byte Digital, my first company, I built a business website and an internal dashboard end to end with the MERN stack for *[adjust – describe the business]*. On each booking, stock was recalculated with an atomic `$inc` that has a condition of stock greater than or equal to the quantity, so concurrent bookings couldn't oversell, using a transaction when multiple items were involved, and stock was restored on cancellation. Receipt emails were sent with HTML templates *[adjust: Nodemailer/SES/SendGrid]* after the booking was saved. Ideally that should be async, so the booking API isn't slowed down, which is a lesson I applied later with Kafka. The biggest learning from that job was owning features end to end and talking directly to the business owner."
-
-- *Q. What business?* *[adjust – know the domain]*
-- *Q. Stock recalculation on each booking – how? Race conditions?* Atomic `$inc` with condition `stock >= qty`, or transaction when multiple items; restore stock on cancellation.
-- *Q. How were receipt emails sent?* Nodemailer/SES/SendGrid with HTML templates *[adjust]*, sent after booking is saved (ideally async so booking API isn't slowed).
-- *Q. What did you learn from your first job?* Full-stack basics, owning features end to end, talking to the business owner.
+> 🎤 **Interview answer:** "At Byte Digital, my first company, I built a business website and an internal dashboard end to end with the MERN stack, for *[adjust – describe the business]*.
+> - **Stock on each booking:** reduced with one safe update – `$inc` with the condition 'stock ≥ quantity' – so two bookings at the same time couldn't oversell. A transaction when many items were involved, and stock put back on cancellation.
+> - **Receipt emails:** sent with HTML templates *[adjust: Nodemailer / SES / SendGrid]* after the booking was saved. Ideally this should be in the background so the booking API isn't slowed down – a lesson I applied later with Kafka.
+>
+> The biggest learning from that job: owning features end to end, and talking directly to the business owner."
 
 ---
 
 ## Key projects
 
-**Veer Maratha Matrimony** – 25K+ registered / 2K DAU. Questions:
+**Veer Maratha Matrimony** – 25K+ registered / 2K DAU.
 
-> 🎤 **Interview answer:** "Veer Maratha Matrimony has over 25,000 registered users and about 2,000 daily active users. 'Near me' search uses a 2dsphere index with `$geoNear`, coordinates in longitude, latitude order, combined with preference filters. Matchmaking filters stay fast with compound indexes on the common filters like gender, date of birth for age, religion and caste, plus pagination and preference-based defaults. Premium plans are paid through a payment gateway with webhook verification, and SMS is used for OTP and alerts *[adjust providers]*."
+> 🎤 **Interview answer:** "It has over 25,000 registered users and about 2,000 daily active users.
+> - **'Near me' search** uses a `2dsphere` index with `$geoNear`, with location saved as `[longitude, latitude]`, plus preference filters.
+> - **Fast match filters** – compound indexes on common filters like gender, date of birth (for age), religion and caste, plus pagination.
+> - **Premium plans** paid through a payment gateway with webhook checks, and **SMS** for OTP and alerts *[adjust providers]*.
+> - **Scaling issues at 2K daily users:** *[adjust: e.g. chat load, search speed]*."
 
-- *How does geo-search work?* `2dsphere` index + `$near`/`$geoNear` with `[lng, lat]`, combined with filters. [04 → Geo query](04-mongodb-sql.md#extra-mongodb-questions)
-- *Matchmaking filters – how did you make them fast?* Compound indexes on common filters (gender, age via dob, religion/caste), pagination, preference-based defaults.
-- *Payment/SMS integration?* Payment gateway for premium plans with webhook verification; SMS for OTP/alerts *[adjust providers]*.
-- *2K DAU – any scaling issues?* *[adjust: e.g. chat load, search speed]*.
+See [04 → Geo query](04-mongodb-sql.md#extra-mongodb-questions).
 
-**Rider Perfume** – full backend: orders, inventory, OTP auth, caching, pagination, rate limiting, invoices. Full answers in [12 Project Questions](12-project-questions.md).
+**Rider Perfume** – full backend: orders, inventory, OTP auth, caching, pagination, rate limiting, invoices.
 
-> 🎤 **Interview answer:** "For Rider Perfume, I built the complete backend: orders, inventory, OTP authentication, caching, pagination, rate limiting and automated invoices. Invoices are generated automatically after payment succeeds: a PDF is created *[adjust: pdfkit/puppeteer]* with the order details and GST, stored in S3, and emailed to the customer."
+> 🎤 **Interview answer:** "I built the complete backend: orders, stock, OTP login, caching, pagination, rate limiting and automatic invoices. After a payment succeeds, a PDF invoice is created *[adjust: pdfkit / puppeteer]* with the order details and GST, saved in S3, and emailed to the customer."
 
-- *How were invoices automated?* After payment success, generate PDF (pdfkit/puppeteer *[adjust]*) with order details and GST, store in S3, email link/attachment.
+Full answers in [12 Project Questions](12-project-questions.md).
 
 ---
 
@@ -275,7 +299,7 @@ Anything on your resume is fair game. Quick check:
 |---|---|---|
 | TypeScript | Generics, utility types, TS with Express | [06](06-typescript.md) |
 | NestJS | DI, guards, pipes, interceptors, lifecycle | [08](08-nestjs.md) |
-| Microservices | Communication, saga, failure handling | [10](10-system-design.md#monolith-vs-microservices) |
+| Microservices | How they talk, saga, failure handling | [10](10-system-design.md#monolith-vs-microservices) |
 | Socket.io | Rooms, auth, scaling with Redis adapter | [07](07-apis-backend.md#q-how-does-socketio-scale-across-many-servers) |
 | Swagger | How you documented APIs | [08](08-nestjs.md#q-how-do-you-add-swagger) |
 | PostgreSQL / MySQL | Joins, transactions, indexes, isolation | [04](04-mongodb-sql.md#sql) |
@@ -287,16 +311,16 @@ Anything on your resume is fair game. Quick check:
 | System design, caching, idempotency, rate limiting, DLQ | | [10](10-system-design.md), [09](09-kafka-redis-messaging.md) |
 | React / Next.js | Hooks, SSR vs CSR | [05](05-react.md) |
 
-**RabbitMQ and SQS** are in skills but not in any bullet → expect *"Where did you use RabbitMQ/SQS?"* Have a clear answer *[adjust: which project, what for]*. If it was small usage, say so honestly and explain the concepts well.
+**RabbitMQ and SQS** are in your skills but not in any bullet → expect *"Where did you use RabbitMQ/SQS?"* Have a clear answer *[adjust: which project, what for]*. If it was small usage, say so honestly and explain the concepts well.
 
 ---
 
 ## Questions about your career timeline
 
-> 🎤 **Interview answer:** "For timeline questions I keep it honest, positive and short. For the short stays, I give a genuine reason focused on growth or the project, without blaming anyone *[prepare your real reason]*. For doing the MCA while working, I explain how I managed my time *[adjust]*, and that it strengthened my fundamentals in DBMS, operating systems, networking and DSA. And I'm always clear and truthful about my current notice period and availability."
+> 🎤 **Interview answer:** "For timeline questions I keep it honest, positive and short. For short stays, I give the real reason, focused on growth or the project, without blaming anyone *[prepare your real reason]*. For doing my MCA while working, I explain how I managed my time *[adjust]*, and that it made my basics stronger in DBMS, operating systems, networking and DSA. And I'm always clear and truthful about my notice period."
 
 - *"You've been at Notus since Sep 2026 and Revinfotech was May–Aug 2026. Why short stays?"* → Prepare an honest, positive answer – see [14 → Job changes](14-hr-behavioural.md#why-did-you-change-jobs--short-tenure).
-- *"You did MCA (2024–2025) while working full-time. How?"* → Weekend/distance classes *[adjust]*, time management; it strengthened fundamentals (DBMS, OS, networking, DSA).
+- *"You did MCA (2024–2025) while working full-time. How?"* → Weekend/distance classes *[adjust]*, time management; it made your basics stronger (DBMS, OS, networking, DSA).
 - *"Bachelor's 2021–2023 and job from May 2022?"* → Worked while finishing the degree *[adjust]*.
 - *"Immediate joiner – are you currently serving notice?"* → Be clear and truthful about your status.
 

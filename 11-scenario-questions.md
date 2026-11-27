@@ -45,94 +45,72 @@ Answer pattern: **Understand → Measure → Fix → Prevent**.
 
 ### 1. How would you handle 10,000 API requests simultaneously?
 
-> 🎤 **Interview answer:** "First I'd clarify whether it's 10,000 requests per second or 10,000 concurrent connections, and whether they're mostly reads or writes, because the answer changes. Node itself is good at concurrency because I/O is non-blocking, so the first check is that no route blocks the event loop with heavy CPU or sync work.
+> 🎤 **Interview answer:** "First I'd ask: is it 10,000 per second, or 10,000 users connected at the same time? And is it mostly reading or writing? The answer changes the design.
 >
-> Then I scale in layers. Use all CPU cores with PM2 cluster mode, and scale horizontally with multiple stateless instances behind a load balancer, with JWT auth, sessions in Redis and files in S3. Cache hot reads in Redis, and in a CDN for public data, so most requests never reach the database. On the database side: proper indexes, a correctly sized connection pool and read replicas. Anything slow, like emails or invoices, goes to a queue, and the API returns immediately. Then I protect the system with rate limiting, payload limits, timeouts and circuit breakers, set up auto-scaling, load-test with k6 or autocannon beforehand, and monitor p95 and p99 latency, error rate and event loop lag.
+> Node is already good at handling many requests at once, because it doesn't wait for I/O. So first I make sure **no route blocks the main thread** with heavy CPU work.
 >
-> From my experience at Appsinvo, moving notifications and order receipts to Kafka took them off the request path, and indexes plus caching kept the database load low under traffic."
-
-First ask: 10,000 per second or 10,000 open at once? Reads or writes?
-
-1. **Node handles concurrency well** because I/O is non-blocking – make sure no route does heavy CPU work or sync calls on the main thread.
-2. **Use all CPU cores** – PM2 cluster mode / multiple containers.
-3. **Scale horizontally** – more instances behind a load balancer (Nginx/ALB). Keep servers stateless (JWT, sessions in Redis, files in S3).
-4. **Cache** frequent reads in Redis (and CDN for static/public data) so most requests don't hit the DB.
-5. **Database** – proper indexes, connection pool sized correctly, read replicas for reads.
-6. **Move slow work to a queue** (Kafka/SQS) – email, invoice, notifications – return quickly (201/202).
-7. **Protect the system** – rate limiting, request body size limits, timeouts on every outgoing call, circuit breaker.
-8. **Auto-scaling** based on CPU/request count; **load test** before (k6, Artillery, autocannon).
-9. **Monitor** latency (p95/p99), error rate, event loop lag, DB connections.
-
-*From my work:* moving notifications and order receipts to Kafka took them off the request path, and caching + indexes kept DB load low.
+> Then I scale step by step:
+> 1. **Use all CPU cores** with PM2 cluster mode.
+> 2. **Add more servers** behind a load balancer. Servers must be stateless: JWT for auth, sessions in Redis, files in S3.
+> 3. **Cache** popular data in Redis, so most requests never reach the DB.
+> 4. **Database:** proper indexes, right connection pool size, read copies.
+> 5. **Move slow work to a queue** – emails, invoices – and reply immediately.
+> 6. **Protect the system:** rate limiting, request size limits, timeouts.
+> 7. **Load test** before going live (k6, autocannon), and **monitor** response time and errors.
+>
+> From my work at Appsinvo: moving notifications and order receipts to Kafka took them out of the API request, and indexes plus caching kept the DB load low."
 
 ---
 
 ### 2. How do you improve the performance of a slow Node.js API?
 
-> 🎤 **Interview answer:** "My rule is measure first, then fix the biggest bottleneck. I add timing logs for each step or use APM to see where the time goes: database, external calls or CPU. Most often it's the database, so I run `explain`, add the right compound indexes for the filters and sort, use projection and `.lean()` to fetch only the needed fields, remove N+1 queries, and push filtering and pagination into the query instead of doing it in JavaScript. Then I parallelise independent calls with `Promise.all`, cache data that doesn't change often in Redis, reduce the payload with gzip, move heavy work to queues or worker threads, add timeouts to slow third parties, and check for event loop blockers like a huge JSON.parse. Then I measure again.
+> 🎤 **Interview answer:** "My rule: **measure first, then fix the biggest problem.**
 >
-> A real example: at Appsinvo, an admin user-listing API took about 4.5 seconds. With explain I found it was doing a collection scan, returning full user documents, and filtering some data in Node after loading it. I added compound indexes matching the filters and sort, returned only the fields the list needed with lean, and moved all filtering and pagination into the query. It came down to about 550 milliseconds, roughly 88% faster."
+> I add timing logs for each step, or use an APM tool, to see where the time goes: database, external API, or CPU.
+>
+> Most of the time it's the **database**. So I:
+> - run `explain()` and add the right indexes,
+> - return only the needed fields (projection, `.lean()`),
+> - remove N+1 queries,
+> - do filtering and pagination **in the DB**, not in JavaScript.
+>
+> Then: run independent calls together with `Promise.all`, cache data that rarely changes in Redis, compress responses with gzip, move heavy work to a queue, and add timeouts to slow third-party calls. Then I measure again.
+>
+> **Real example:** at Appsinvo, an admin user-listing API took about 4.5 seconds. Using `explain`, I found it was scanning the whole collection, returning full user documents, and filtering some data in Node after loading everything. I added compound indexes for the filters and sort, returned only the fields the list needed, and moved all filtering into the query. It came down to about **550 ms**, around 88% faster."
 
-**Measure first, then fix the biggest problem.**
-1. **Find where time goes** – logs with timing per step, APM (New Relic/Datadog/CloudWatch), `console.time`, DB slow query log, `explain()`.
-2. **Database (most common cause)**
-   - Add correct indexes (compound for filter + sort).
-   - Select only needed fields (projection), `.lean()` in Mongoose.
-   - Remove N+1 queries (use `$in`, JOIN, populate wisely).
-   - Paginate, and do filtering in the DB, not in JS.
-3. **Run independent calls in parallel** – `Promise.all` instead of sequential awaits.
-4. **Cache** results that don't change often (Redis).
-5. **Reduce payload** – fewer fields, gzip compression.
-6. **Move heavy work off the request** – queue, worker threads for CPU tasks.
-7. **Check external calls** – slow third-party APIs → timeouts, caching, async.
-8. **Check event loop blocking** – big `JSON.parse`, sync crypto, large loops.
-9. Re-measure and compare.
-
-*From my work:* user-listing API went from **4.5 s to 550 ms** – added compound indexes for the filter fields, returned only required fields (smaller payload), and moved filtering into the query. See [13 Resume](13-resume-questions.md#cut-a-user-listing-api-from-45-s-to-550-ms).
+See [13 Resume](13-resume-questions.md#cut-a-user-listing-api-from-45-s-to-550-ms).
 
 ---
 
 ### 3. How do you prevent duplicate API requests?
 
-> 🎤 **Interview answer:** "Duplicates come from double clicks, network retries or client bugs. On the frontend we disable the button and debounce, but that's only UX. The real protection has to be on the backend.
+> 🎤 **Interview answer:** "Duplicates come from double clicks, network retries, or app bugs. On the frontend, we disable the button after the click. But that's only for user experience. **The real protection must be on the backend.**
 >
-> The main tool is an idempotency key: the client sends a unique `Idempotency-Key` header for each logical action. The server does an atomic `SET key processing NX` in Redis with a TTL. If the key is new, we process the request and store the response against the key. If the key already has a response, we return that same response. If it's still processing, we return 409. As a second layer, I put unique constraints in the database, like a unique gateway payment id or user plus order reference, so even if two requests slip through, the second insert fails safely. For short critical sections, like applying a coupon, I use a Redis lock, and for webhooks and events, I store processed event ids.
+> 1. **Idempotency key** – the app sends a unique `Idempotency-Key` header for each action. The server tries to save it in Redis with `SET key processing NX` ('only if it doesn't exist').
+>    - New key → process the request and save the response with the key.
+>    - Key already has a response → return the same saved response.
+>    - Key still processing → return 409.
+> 2. **Unique rule in the DB** – like a unique gateway payment id. Even if two requests get through, the second insert fails safely.
+> 3. **Redis lock** for short critical actions, like applying a coupon.
+> 4. **Save processed event ids** for webhooks and Kafka events.
 >
-> I used exactly this approach across the 5 payment gateways at Appsinvo, so retries never caused double payments."
-
-Duplicates come from double clicks, network retries, or client bugs.
-
-**Frontend:** disable the button after click, debounce.
-**Backend (the real protection):**
-1. **Idempotency key** – client sends a unique `Idempotency-Key` header per action. Server stores it in Redis with `SET key "processing" NX EX 86400`:
-   - Key is new → process, store the response.
-   - Key exists with a response → return the saved response.
-   - Key exists, still processing → 409.
-2. **Unique constraints in DB** – unique index on `(userId, orderRef)` or gateway `paymentId` → second insert fails safely.
-3. **Distributed lock** for a short critical section (e.g. "apply coupon for this user").
-4. **Webhook/event dedupe** – store processed `eventId`s.
-5. **Rate limit** sensitive endpoints.
-
-*From my work:* used idempotency keys across 5 payment gateways so retries didn't cause double payments.
+> I used exactly this across 5 payment gateways at Appsinvo, so retries never caused double payments."
 
 ---
 
 ### 4. How would you implement JWT authentication?
 
-> 🎤 **Interview answer:** "On registration I validate the input, hash the password with bcrypt and save the user. On login I verify with `bcrypt.compare` and issue two tokens: a short-lived access token, around 15 minutes, with the user id and role, and a long-lived refresh token, around 7 days, whose hash I store in the database or Redis along with device info. The refresh token goes in an httpOnly, Secure, SameSite cookie, and the access token is returned in the body and kept in memory by the client.
->
-> An auth middleware reads the Bearer token, verifies it, sets `req.user`, or returns 401, and an authorization middleware checks roles and returns 403. The refresh endpoint validates the refresh token against the database, issues a new access token and rotates the refresh token. If an old refresh token is reused, I treat it as theft and revoke all sessions. Logout deletes the refresh token, and for immediate revocation I can blacklist the access token's jti in Redis until it expires. Plus the basics: secrets in a secrets manager, rate-limited login, no sensitive data in the payload, and HTTPS only."
-
-1. **Register** – validate input → hash password with bcrypt → save user.
-2. **Login** – find user → `bcrypt.compare` → create:
-   - **Access token** (15 min) with `sub: userId, role`.
-   - **Refresh token** (7 days) – store its hash in DB/Redis with device info.
-3. Send refresh token in **httpOnly, Secure, SameSite** cookie; access token in response body (kept in memory by the client).
-4. **Auth middleware** – read `Authorization: Bearer <token>`, `jwt.verify`, set `req.user`, else 401.
-5. **Authorization middleware** – check role/permission, else 403.
-6. **Refresh endpoint** – verify refresh token + check it exists in DB and not revoked → issue new access token + **rotate** refresh token. If a used refresh token is reused → revoke all sessions (theft).
-7. **Logout** – delete refresh token; optionally blacklist access token `jti` in Redis until it expires.
-8. **Security** – strong secrets in env/Secrets Manager, rate-limit login, don't put sensitive data in payload, HTTPS only.
+> 🎤 **Interview answer:**
+> 1. "**Register** – validate input, hash the password with bcrypt, save the user.
+> 2. **Login** – check the password with `bcrypt.compare`, then create two tokens:
+>    - **Access token** – short (15 min), has user id and role.
+>    - **Refresh token** – long (7 days). I save its hash in the DB or Redis, with device info.
+> 3. The refresh token goes in an **httpOnly cookie** (JavaScript can't read it). The access token goes in the response body, and the app keeps it in memory.
+> 4. **Auth middleware** – reads the `Bearer` token, verifies it, sets `req.user`. If not valid → 401.
+> 5. **Role middleware** – checks the role. If not allowed → 403.
+> 6. **Refresh API** – checks the refresh token against the DB, gives a new access token and a **new** refresh token (rotation). If an old refresh token is used again, it's probably stolen, so I log out all sessions.
+> 7. **Logout** – delete the refresh token.
+> 8. **Basics** – secrets in a secrets manager, rate-limited login, no private data in the token, HTTPS only."
 
 Code in [03 → JWT](03-nodejs-express.md#7-jwt-and-refresh-tokens).
 
@@ -140,18 +118,15 @@ Code in [03 → JWT](03-nodejs-express.md#7-jwt-and-refresh-tokens).
 
 ### 5. How do you handle errors in Express.js?
 
-> 🎤 **Interview answer:** "I centralise it. Services throw a custom `AppError` with a status code and an `isOperational` flag. Async route handlers are wrapped with an asyncHandler, or we use Express 5, so rejected promises reach the error middleware. Validation middleware with zod or Joi returns clean 400s. A 404 handler catches unknown routes. Then one global error middleware at the end logs the full error with the request id and returns a consistent JSON response, hiding stack traces and internal messages in production.
->
-> I also map known library errors: a Mongo duplicate key error, code 11000, becomes 409; a CastError becomes 400; a JWT TokenExpiredError becomes 401. At process level, I handle `unhandledRejection` and `uncaughtException` by logging and letting PM2 restart the process cleanly. And we alert on error-rate spikes."
-
-1. Custom `AppError` class with `statusCode` and `isOperational`.
-2. Async wrapper (`asyncHandler`) or Express 5 so rejected promises reach the error handler.
-3. Validation middleware (Joi/zod/class-validator) → 400 with clear messages.
-4. 404 handler for unknown routes.
-5. **One global error middleware** `(err, req, res, next)` at the end – logs full error with request id, sends a clean response, hides stack traces in production.
-6. Map known library errors: Mongo duplicate key `11000` → 409, `CastError` → 400, JWT `TokenExpiredError` → 401.
-7. `process.on("unhandledRejection")` and `uncaughtException` → log and restart (PM2).
-8. Alerts on error-rate spikes.
+> 🎤 **Interview answer:** "I handle all errors in **one central place**:
+> 1. Services throw my own `AppError` with a status code.
+> 2. Async routes are wrapped with `asyncHandler` (or Express 5), so errors reach the error middleware.
+> 3. Validation middleware (zod / Joi) returns a clean 400.
+> 4. A 404 handler for unknown routes.
+> 5. **One global error middleware at the end** – logs the full error with the request id, and sends a clean JSON response. No stack traces in production.
+> 6. I convert known library errors: MongoDB duplicate key (code 11000) → 409, invalid id (CastError) → 400, expired JWT → 401.
+> 7. For anything missed, `unhandledRejection` and `uncaughtException` handlers log the error, and PM2 restarts the app.
+> 8. Alerts when errors suddenly increase."
 
 Code in [03 → Error handling](03-nodejs-express.md#5-error-handling).
 
@@ -159,149 +134,150 @@ Code in [03 → Error handling](03-nodejs-express.md#5-error-handling).
 
 ### 6. How would you optimise a slow MongoDB query?
 
-> 🎤 **Interview answer:** "First I identify it, with the MongoDB profiler using a slowms threshold, the Atlas performance advisor, or our logs. Then I run `explain('executionStats')` and look for COLLSCAN, a big gap between docs examined and docs returned, or an in-memory SORT stage. The usual fix is a compound index following the ESR rule, equality then sort then range, plus projection and lean to return less data. I also avoid patterns that can't use indexes well, like unanchored regex, `$where`, and `$ne` or `$nin` on large sets. In aggregations, I put `$match` and `$sort` first, project early and limit before `$lookup`. For deep pages I switch from skip to cursor pagination. If the query is still heavy, I reconsider the schema, embed data that's read together, or store computed counters, and cache frequent results in Redis. Finally, I check that the working set and indexes fit in RAM. That's exactly the process I followed for the 4.5-second-to-550-millisecond optimisation."
-
-1. Find it – MongoDB profiler (`db.setProfilingLevel(1, { slowms: 100 })`), Atlas performance advisor, logs.
-2. `explain("executionStats")` – check `COLLSCAN` vs `IXSCAN`, `totalDocsExamined` vs `nReturned`, in-memory `SORT`.
-3. Add / fix index using the **ESR rule** (Equality, Sort, Range).
-4. Projection – return only needed fields; `.lean()`.
-5. Avoid `$regex` without a prefix anchor, `$where`, `$nin`/`$ne` on large sets – they can't use indexes well.
-6. Aggregation – `$match` and `$sort` first, `$project` early, `$limit` before `$lookup` when possible.
-7. Replace `skip` on deep pages with cursor pagination.
-8. Fix schema if needed – embed data read together; store computed counters instead of counting each time.
-9. Cache results in Redis if the query is frequent.
-10. Check server: working set fits in RAM, index sizes.
+> 🎤 **Interview answer:**
+> 1. "**Find it** – MongoDB profiler, Atlas performance advisor, or our logs.
+> 2. **Run `explain('executionStats')`** – look for COLLSCAN (reading every document), a big difference between documents checked and documents returned, or sorting in memory.
+> 3. **Add the right compound index**, using the ESR rule: Equality fields first, then Sort, then Range.
+> 4. **Return only needed fields** with projection and `.lean()`.
+> 5. **Avoid queries that can't use indexes well**, like `$where`, or `$ne` / `$nin` on large data.
+> 6. **In aggregations**, put `$match` and `$sort` first, and `$limit` before `$lookup`.
+> 7. **For deep pages**, use cursor pagination instead of `skip`.
+> 8. **If still slow**, change the schema: embed data that's read together, or save counters instead of counting every time.
+> 9. **Cache** frequent results in Redis.
+>
+> This is exactly how I did the 4.5 s → 550 ms optimisation."
 
 ---
 
 ### 7. How do you manage database transactions?
 
-> 🎤 **Interview answer:** "I use a transaction only when multiple writes must succeed or fail together, like a money transfer, order plus stock plus payment record, or in the Air India project, creating a GRN and updating the received quantity on the purchase order. In SQL that's BEGIN and COMMIT, or Prisma's `$transaction`, which is what I used there. In MongoDB, it's a session with `withTransaction`, which needs a replica set. But since single-document updates are already atomic in MongoDB, I design to use those where possible.
+> 🎤 **Interview answer:** "I use a transaction only when **many writes must all succeed or all fail together**. For example a money transfer, or in the Air India project, creating a GRN and updating the received quantity on the purchase order.
+> - In SQL: `BEGIN ... COMMIT`, or Prisma's `$transaction`, which I used there.
+> - In MongoDB: a session with `withTransaction`. But a single-document update is already all-or-nothing, so I try to design around that.
 >
-> My rules: keep transactions short, never call external APIs inside them, because locks are held while waiting. Handle concurrency with `SELECT FOR UPDATE` or optimistic locking with a version column. Retry on deadlocks and transient write conflicts. And across microservices, where one database transaction isn't possible, I use a saga with compensating actions, plus the outbox pattern for reliable events."
+> My rules:
+> - **Keep transactions short.** Never call an external API inside one, because rows stay locked while waiting.
+> - For two people changing the same row: `SELECT ... FOR UPDATE`, or a `version` column.
+> - Retry if the DB reports a deadlock or conflict.
+> - **Across microservices**, one DB transaction isn't possible, so I use a **saga** with undo steps, and the **outbox pattern** for reliable events."
 
-1. Use a transaction only when **multiple writes must succeed or fail together** (money transfer, order + stock + payment record, GRN + PO update).
-2. SQL: `BEGIN … COMMIT / ROLLBACK`; Prisma `$transaction`, TypeORM `dataSource.transaction`.
-3. MongoDB: sessions + `withTransaction` (needs replica set). Single-document updates are already atomic, so design to use them when possible.
-4. **Keep transactions short** – no external API calls inside (locks are held while waiting).
-5. Choose isolation level; use `SELECT … FOR UPDATE` or optimistic locking (`version` column) for concurrent updates.
-6. Handle **deadlocks / write conflicts with retry** (Mongo `withTransaction` retries transient errors).
-7. **Across services** you can't use one DB transaction → **Saga** with compensating actions + **Outbox** for events ([10 → Patterns](10-system-design.md#patterns-to-know)).
-
-Code in [04 → Transactions](04-mongodb-sql.md#8-transactions).
+Code in [04 → Transactions](04-mongodb-sql.md#8-transactions). Patterns in [10 → Patterns](10-system-design.md#patterns-to-know).
 
 ---
 
 ### 8. How would you implement pagination for millions of records?
 
-> 🎤 **Interview answer:** "I wouldn't use offset or skip for this, because the database still has to read and throw away all the skipped rows, so deep pages become very slow, and results shift when new data arrives. I'd use cursor, or keyset, pagination: sort by `created_at` and `id` together so the order is unique, and for the next page ask for rows less than the last seen `(created_at, id)` with a limit. With an index matching that sort, every page is equally fast, even page 50,000.
+> 🎤 **Interview answer:** "I would **not** use `skip` / `OFFSET`. For page 50,000, the database still reads and throws away all the earlier rows, so it gets very slow. Also, results shift when new data is added.
 >
-> The API returns a `nextCursor`, base64-encoded, and `hasMore`, which I get by fetching limit plus one. I cap the limit at about 100. Exact total counts on millions of rows are expensive, so I cache them, show an estimate, or use a 'load more' UI. If the use case is complex search with many filters, I'd bring in Elasticsearch or OpenSearch. And if the actual need is an export, I don't paginate at all. I stream the data."
+> I'd use **cursor pagination**: sort by `created_at` and `id` together (so the order is always unique), and for the next page, ask for rows **after the last one the user saw**. With an index on that sort, every page is equally fast, even page 50,000.
+>
+> - The API returns `nextCursor` and `hasMore`. I find `hasMore` by fetching one extra row.
+> - Max limit about 100.
+> - Exact total count on millions of rows is slow, so I cache it, show an estimate, or use a 'Load more' button.
+> - For complex search with many filters, I'd use Elasticsearch.
+> - If the real need is an export, I don't paginate. I **stream** the data."
 
-1. **Don't use `OFFSET/skip` for deep pages** – the DB still reads all skipped rows; page 50,000 becomes very slow.
-2. Use **cursor (keyset) pagination**: `WHERE (created_at, id) < (:lastCreatedAt, :lastId) ORDER BY created_at DESC, id DESC LIMIT 20`.
-3. Add an **index** matching the sort (`created_at DESC, id DESC`) plus filter columns.
-4. Return `nextCursor` (encode as base64 string) and `hasMore` (fetch `limit + 1`).
-5. Set a **max limit** (e.g. 100).
-6. **Total count** is expensive – cache it, show approximate count, or skip it ("load more").
-7. For search with many filters on huge data → a search engine (Elasticsearch/OpenSearch).
-8. For exports, don't paginate the API – **stream** the data ([E11](#e11-export-lakhs-of-rows-to-csv)).
+```sql
+SELECT * FROM orders
+WHERE (created_at, id) < (:lastCreatedAt, :lastId)
+ORDER BY created_at DESC, id DESC
+LIMIT 20;
+```
 
-Code in [07 → Pagination](07-apis-backend.md#4-pagination).
+Code in [07 → Pagination](07-apis-backend.md#4-pagination). Export: [E11](#e11-export-lakhs-of-rows-to-csv).
 
 ---
 
 ### 9. How do you secure an API against SQL injection and NoSQL injection?
 
-> 🎤 **Interview answer:** "SQL injection happens when user input is concatenated into a query string, so input like `' OR 1=1 --` changes the query logic. The fix is always parameterised queries, which ORMs like Prisma and TypeORM do by default. The risk comes back with raw queries, so I'm careful with things like `$queryRawUnsafe`.
+> 🎤 **Interview answer:** "**SQL injection** happens when user input is pasted directly into the SQL text. Then input like `' OR 1=1 --` changes what the query does. The fix: **always use parameterised queries**, where the input is sent separately from the SQL. ORMs like Prisma and TypeORM do this by default. I'm careful only with raw queries.
 >
-> NoSQL injection in MongoDB is different: the attacker sends an object instead of a string, like `password: { $ne: null }`, and if we pass `req.body` straight into `findOne`, it matches without the real password. The fixes are strict type validation with zod, Joi or class-validator DTOs, so email and password must be strings, sanitising keys that start with `$` using express-mongo-sanitize or Mongoose's `sanitizeFilter`, never passing raw request objects into queries, and avoiding `$where`.
+> **NoSQL injection** in MongoDB is different: the attacker sends an **object** instead of a string, like `password: { $ne: null }` ('password is not null'). If we pass `req.body` straight into `findOne`, it matches **without the real password**. Fixes:
+> - **Check types** – email and password must be strings (zod / Joi / DTO).
+> - **Remove keys that start with `$`** (`express-mongo-sanitize`, or Mongoose `sanitizeFilter`).
+> - **Never pass `req.body` directly** into a query.
 >
-> On top of that: a least-privilege database user, whitelisting allowed sort and filter fields, and error messages that never expose the query."
+> Also: a DB user with limited permissions, only allow known sort / filter fields, and error messages that never show the query."
 
-**SQL injection** – attacker puts SQL in input: `' OR 1=1 --`.
+**SQL injection:**
 ```js
-// ❌ Never
+// ❌ Never – input is pasted into the SQL
 db.query(`SELECT * FROM users WHERE email = '${email}'`);
-// ✅ Parameterised query
+
+// ✅ Parameterised – input is sent separately
 db.query("SELECT * FROM users WHERE email = $1", [email]);
 ```
-ORMs (Prisma/TypeORM) parameterise by default – be careful with raw queries (`$queryRawUnsafe`, string-built `query()`).
 
-**NoSQL injection** – attacker sends an object instead of a string:
+**NoSQL injection** – the attacker sends:
 ```json
 { "email": "admin@x.com", "password": { "$ne": null } }
 ```
 `User.findOne({ email, password })` would match without the real password!
-Fixes:
-- **Validate types** – email and password must be strings (Joi/zod/class-validator DTO).
-- Sanitize – remove keys starting with `$` or containing `.` (`express-mongo-sanitize`); Mongoose `sanitizeFilter: true`.
-- Never pass `req.body` / `req.query` directly into a query.
-- Avoid `$where` and server-side JS.
 
-**General:** least-privilege DB user (app user can't drop tables), whitelist sort/filter fields (`?sort=` only allowed values), error messages that don't expose queries, WAF.
+```js
+// ✅ Fix – make sure they are plain strings
+if (typeof email !== "string" || typeof password !== "string") {
+  return res.status(400).json({ message: "Invalid input" });
+}
+```
 
 ---
 
 ### 10. How would you debug a production issue?
 
-> 🎤 **Interview answer:** "First I assess the impact: who's affected, since when, and which endpoints, and I inform the team if it's serious. Then I stop the bleeding before finding the root cause: roll back the last deploy, turn off a feature flag, scale up or restart. Then I investigate with data. I look at dashboards for error rate, latency, CPU, memory, DB, Redis and queue lag, and search logs by request id, user id or error message in CloudWatch Logs Insights. The key question is what changed: a deploy, a config or env change, a data change, a third-party outage or a traffic spike. Then I reproduce it in staging with the same request or data, fix it, add a test for it, deploy, and watch the metrics. Afterwards we do a short blameless post-mortem: root cause, why monitoring didn't catch it earlier, and what prevents it next time.
+> 🎤 **Interview answer:**
+> 1. "**Check the impact** – who is affected, since when, which API. If serious, tell the team.
+> 2. **Stop the damage first** – roll back the last deploy, turn off a feature flag, add servers, or restart.
+> 3. **Look at dashboards** – error rate, response time, CPU, memory, DB, Redis, queue lag.
+> 4. **Search the logs** – by request id, user id or error message (CloudWatch Logs Insights).
+> 5. **Find what changed** – a deploy, a config change, data change, third-party outage, or a traffic spike.
+> 6. **Reproduce** it in staging with the same request or data.
+> 7. **Fix it**, add a test, deploy, and watch the metrics.
+> 8. **Short post-mortem** – root cause, why we didn't catch it earlier, and how to prevent it.
 >
-> A real example: at KindSwap, users were receiving duplicate crypto price updates. CloudWatch logs showed the same update coming from different instance ids, because all 4 to 5 instances were publishing. I fixed it with Redis-based leader election, so only one instance publishes, with automatic failover."
-
-1. **Understand impact** – who is affected, since when, which endpoint. If serious, inform the team.
-2. **Stop the bleeding** – rollback the last deploy, toggle a feature flag, scale up, or restart if needed.
-3. **Check monitoring** – error rate, latency, CPU/memory, DB, Redis, queue lag (CloudWatch dashboards/alarms).
-4. **Check logs** – search by request id / user id / error message (CloudWatch Logs Insights, PM2 logs).
-5. **Find what changed** – recent deploy, config/env change, data change, third-party outage, traffic spike.
-6. **Reproduce** in staging/local with the same data or request.
-7. **Fix**, add a test for it, deploy, and watch metrics.
-8. **Post-mortem** – root cause, why monitoring didn't catch it earlier, steps to prevent (alerts, tests, validation).
-
-Have a real story ready, e.g.: *"Duplicate price updates in KindSwap because all 4–5 instances were publishing. I found it from CloudWatch logs showing the same update from different instance ids. Fixed it with Redis leader election."*
+> **Real example:** at KindSwap, users were getting duplicate crypto price updates. CloudWatch logs showed the same update coming from different server ids, because all 4–5 servers were publishing. I fixed it with Redis leader election, so only one server publishes, with automatic failover."
 
 ---
 
 ### 11. What happens when an async function throws an error?
 
-> 🎤 **Interview answer:** "An async function always returns a promise, so when it throws, nothing crashes at that line. The returned promise is rejected with that error. If the caller awaits it inside try/catch, or attaches `.catch`, it's handled. If nobody handles it, Node emits `unhandledRejection`, and since Node 15 the default behaviour is to crash the process.
+> 🎤 **Interview answer:** "An async function always returns a promise. So when it throws, **nothing crashes at that line**. Instead, the promise it returned becomes **rejected** (failed) with that error.
+> - If the caller uses `await` inside try/catch, or `.catch()`, the error is handled.
+> - If **nobody** handles it, Node raises `unhandledRejection`, and in Node 15+ **the app crashes**.
 >
-> A few practical gotchas. In Express 4, a rejected promise in a route isn't caught, so the request hangs, which is why we use an asyncHandler or Express 5. Forgetting `await` inside a try block means the error escapes the catch. In `Promise.all`, one rejection rejects the whole thing. And an error thrown inside a setTimeout callback isn't caught by the outer try/catch, because it runs on a different call stack later."
-
-An `async` function always returns a Promise. If it throws, the promise is **rejected** with that error. Nothing crashes at the `throw` line itself.
+> Common mistakes:
+> - In Express 4, an error in an async route isn't caught, so the request hangs. That's why we use `asyncHandler` or Express 5.
+> - **Forgetting `await`** inside try/catch – then the catch never sees the error.
+> - In `Promise.all`, one failure fails the whole thing.
+> - An error thrown inside a `setTimeout` callback is **not** caught by the outer try/catch, because it runs later, separately."
 
 ```js
 async function getUser() { throw new Error("DB down"); }
 
-getUser();                         // rejected promise, nobody handles it → "unhandledRejection"
-await getUser();                   // throws at this line → catch with try/catch
+getUser();                         // nobody handles it → unhandledRejection → crash
+await getUser();                   // throws here → catch with try/catch
 getUser().catch(err => log(err));  // handled
+
+// Forgetting await
+try { save(); } catch {}           // ❌ error is NOT caught
+try { await save(); } catch {}     // ✅ caught
 ```
-- If nobody handles it → Node emits `unhandledRejection`. **Since Node 15 the default is to crash the process.**
-- In **Express 4** the request hangs because Express doesn't catch rejected promises → use `asyncHandler` / `express-async-errors` or upgrade to Express 5.
-- In `Promise.all`, one rejection rejects the whole thing (other promises keep running but their results are ignored).
-- An error thrown inside a `setTimeout` callback inside an async function is **not** caught by the outer try/catch (different call stack).
-- **Forgetting `await`** inside try/catch means the error is not caught: `try { save(); } catch {}` ❌ → `try { await save(); } catch {}` ✅.
 
 ---
 
 ### 12. How would you integrate a third-party API?
 
-> 🎤 **Interview answer:** "I've done this a lot: 5 payment gateways, SMS providers and the SAP integration at Air India. First I read the docs for auth, rate limits, sandbox, error codes, webhooks and whether they support idempotency. Then I wrap the vendor in an adapter module behind our own interface. For example, all gateways implemented the same createOrder, verifyWebhook, refund and getStatus methods, so business code never depends on one vendor, switching is easy, and tests can mock it.
->
-> For reliability: secrets in a secrets manager, a timeout on every call, retries with backoff only for idempotent requests, a circuit breaker if the vendor is often down, validating the response shape, and respecting their rate limits, queueing if necessary. For webhooks: verify the signature, respond fast, process async and dedupe. I log requests and responses with a correlation id, masking sensitive data. And there's always a fallback: mark the operation as pending and let a reconciliation job sync the status later. Everything is tested in the sandbox first."
-
-(You did 5 payment gateways, SMS, SAP.)
-1. **Read docs** – auth method, rate limits, sandbox, webhooks, error codes, idempotency support.
-2. **Wrapper/adapter module** – one service (`RazorpayClient`) hides the vendor details. The rest of the code uses a common interface. Easy to switch vendors and mock in tests.
-3. **Secrets** in env/Secrets Manager.
-4. **Timeouts** on every call, **retries with backoff** only for safe/idempotent requests, **circuit breaker** if it's often down.
-5. **Validate responses** – don't trust the shape blindly.
-6. **Webhooks** – verify signature, respond fast, process async, dedupe.
-7. **Log** request/response (mask sensitive data) with a correlation id.
-8. **Rate limits** – respect them; queue requests if needed.
-9. **Fallback** – queue for later, show "pending" status, reconciliation job.
-10. **Test** in sandbox; write unit tests with mocked client.
+> 🎤 **Interview answer:** "I've done this a lot: 5 payment gateways, SMS providers, and SAP at Air India.
+> 1. **Read the docs** – auth, rate limits, sandbox, error codes, webhooks.
+> 2. **Wrap the vendor in one module** behind our own interface. For example, all payment gateways had the same methods: `createOrder`, `verifyWebhook`, `refund`, `getStatus`. The business code never talks to a vendor directly, so switching vendors is easy and tests can use a fake.
+> 3. **Keys in a secrets manager.**
+> 4. **Timeout on every call. Retry** with increasing waits, but only for actions that are safe to repeat. A **circuit breaker** if the vendor is often down.
+> 5. **Check the response** – don't blindly trust its shape.
+> 6. **Webhooks** – verify the signature, reply fast, process in the background, handle duplicates.
+> 7. **Log** requests and responses with a request id, hiding private data.
+> 8. **Respect their rate limits**, queue requests if needed.
+> 9. **Fallback** – mark it 'pending' and let a background job fix the status later.
+> 10. **Test** in their sandbox first."
 
 ---
 
@@ -309,137 +285,204 @@ getUser().catch(err => log(err));  // handled
 
 ### E1. Server CPU is at 100%
 
-> 🎤 **Interview answer:** "First I check which process is using the CPU, with top, htop or `pm2 monit`, and whether it matches a traffic increase. If it's just more traffic, I scale out. If it's the code, I profile it: `--cpu-prof` or clinic.js flame graphs show the hot function. Typical causes are a heavy loop, a big JSON parse or stringify, a catastrophic regex, synchronous crypto, or image or PDF processing on the main thread. The fix depends on the cause: optimise the algorithm, cache the result, or move CPU-heavy work to worker threads or a separate background service through a queue."
-
-- Check which process (`top`/`htop`, `pm2 monit`).
-- Is it traffic (scale out) or code (a hot loop, big JSON parse, regex, sync crypto, image processing)?
-- Profile with `node --prof` / `--cpu-prof` / clinic.js flame graph.
-- Fix: move CPU work to worker threads or a separate service/queue, cache results, optimise the algorithm.
+> 🎤 **Interview answer:** "First I check **which process** is using the CPU (`top`, `htop`, `pm2 monit`), and whether traffic has gone up.
+> - If it's just **more traffic** → add more servers.
+> - If it's **the code** → I use a profiler (`--cpu-prof` or clinic.js) to find the slow function. Usual causes: a heavy loop, a huge `JSON.parse` / `JSON.stringify`, sync crypto, or image / PDF work on the main thread.
+>
+> Fix: make the code faster, cache the result, or move the heavy work to a worker thread or a background service through a queue."
 
 ### E2. Memory keeps increasing
 
-> 🎤 **Interview answer:** "First I confirm it's a real leak, memory steadily rising over hours in PM2 or CloudWatch and not dropping after GC, rather than normal usage. Then I take two or three heap snapshots with `--inspect` and Chrome DevTools, spaced over time under load, and compare which objects keep growing and what's retaining them. The common causes are in-memory caches or maps with no size limit, event listeners added on every request, intervals that are never cleared, closures holding large objects, and loading huge result sets fully into memory instead of streaming. As a short-term safety net, PM2's `max_memory_restart` keeps the service up, but the real fix is removing the leak, for example adding an LRU limit or TTL, or moving the cache to Redis."
-
-- Confirm with `process.memoryUsage()`, PM2/CloudWatch memory graph over hours.
-- Take 2–3 heap snapshots (`--inspect` + Chrome DevTools) and compare what grows.
-- Common causes: in-memory cache/map without limit, event listeners added per request, intervals not cleared, closures holding big objects, large arrays loaded fully (use streams/pagination).
-- Short-term: PM2 `max_memory_restart`. Long-term: fix the leak.
+> 🎤 **Interview answer:** "First I confirm it's a real leak: memory keeps going up for hours in PM2 or CloudWatch and never comes down.
+>
+> Then I take 2–3 heap snapshots (`--inspect` + Chrome DevTools) a few minutes apart, and compare which objects keep growing.
+>
+> Common causes:
+> - an in-memory cache or map with no size limit,
+> - event listeners added on every request and never removed,
+> - `setInterval` never cleared,
+> - loading huge data fully into memory instead of streaming.
+>
+> Short-term safety: PM2 `max_memory_restart` restarts the app at a memory limit. Real fix: remove the leak, like adding a size limit or moving the cache to Redis."
 
 ### E3. Cron job runs on every instance
 
-> 🎤 **Interview answer:** "With 4 instances, a midnight cron runs 4 times, which means 4 emails to every user or, worse, 4 payouts. I've dealt with exactly this kind of multi-instance problem. Options: acquire a Redis lock with SET NX and a TTL before running the job, so only one instance gets it; or use leader election so only the leader runs scheduled jobs, which is what I built at KindSwap for the price publisher; or run crons in one dedicated worker process; or use a managed scheduler like EventBridge triggering a Lambda or a single queue message. On top of that, the job itself should be idempotent, for example by tracking which payouts are already done, so even an accidental double run is harmless."
-
-With 4 instances, a cron at midnight runs 4 times (4 emails, 4 payouts!).
-Fixes: Redis lock (`SET job:daily NX PX`) before running; leader election (only leader runs crons – what I built); a separate single worker for crons; or a managed scheduler (EventBridge → Lambda / one queue message). Also make the job idempotent.
+> 🎤 **Interview answer:** "With 4 servers, a midnight cron runs **4 times**. That means 4 emails to every user, or worse, 4 payouts! Fixes:
+> - **Redis lock** – before running, take a lock with `SET NX` + expiry. Only one server gets it.
+> - **Leader election** – only the leader runs crons. This is what I built at KindSwap.
+> - **One separate worker** just for crons.
+> - **A managed scheduler**, like AWS EventBridge triggering one Lambda.
+>
+> Also, the job itself should be safe to run twice. For example, save which payouts are already done, so an accidental second run does nothing."
 
 ### E4. Send 1 lakh emails or notifications
 
-> 🎤 **Interview answer:** "I'd never send them inside the API request. The API creates a campaign record and returns 202 Accepted immediately. A producer then walks through the target users with a database cursor, in batches, and pushes jobs to a queue, Kafka, SQS or BullMQ. Workers consume with a concurrency limit that matches the provider's rate limit, with retries, backoff and a DLQ for failures. Each recipient is marked as sent, so if a batch is retried, no one gets a duplicate. We track progress and failures on the campaign, and respect user preferences and unsubscribes. That's the same design as the Kafka notification pipeline I built at Appsinvo."
-
-- Don't send in the API request. Create a "campaign" record, return 202.
-- Producer splits users into batches (cursor through DB) and pushes jobs to a queue (Kafka/SQS/BullMQ).
-- Workers send with concurrency limits matching the provider's rate limit; retries + DLQ; mark each as sent (dedupe if retried).
-- Track progress and failures; respect user preferences/unsubscribe.
+> 🎤 **Interview answer:** "Never inside the API request.
+> 1. The API creates a 'campaign' record and **returns 202 immediately**.
+> 2. A producer goes through the users **in batches** and puts jobs in a queue (Kafka, SQS or BullMQ).
+> 3. Workers send them, at a speed that matches the provider's limit, with retries and a DLQ for failures.
+> 4. Each user is marked as 'sent', so a retry never sends a duplicate.
+> 5. We track progress and failures, and skip users who unsubscribed.
+>
+> It's the same design as the Kafka notification system I built at Appsinvo."
 
 ### E5. Upload large files
 
-> 🎤 **Interview answer:** "I avoid passing large files through Node's memory at all. The backend generates an S3 pre-signed URL after validating the file type and size, and the client uploads directly to S3. For very large files, I use S3 multipart upload, which supports parallel parts and resume. If the file really must go through our server, I stream it with busboy straight to S3 instead of buffering. Post-processing, like virus scanning, resizing or parsing, is triggered by an S3 event to a Lambda or a queue, and I save only the S3 key in the database."
-
-- Don't pass big files through Node memory. Use **S3 pre-signed URLs** – client uploads directly to S3; for very large files use **multipart upload**.
-- If it must pass through the server, **stream** it (`busboy`/multer stream → S3).
-- Validate file type and size, scan if needed, process after upload with an S3 event → Lambda/queue.
+> 🎤 **Interview answer:** "I don't let big files pass through Node's memory.
+> - The backend checks the file type and size, then creates an **S3 pre-signed URL**, and the app uploads **directly to S3**.
+> - For very big files, I use **S3 multipart upload**: the file is sent in parts, in parallel, and can resume if it fails.
+> - If a file really must go through our server, I **stream** it to S3 instead of loading it all in memory.
+> - Work after upload (resize, scan, parse) is triggered by an S3 event to a Lambda or queue. I save only the S3 key in the DB."
 
 ### E6. Third-party API is slow or down
 
-> 🎤 **Interview answer:** "I design so a third-party failure doesn't become our failure. Every call has a timeout. Idempotent calls retry with exponential backoff and jitter. A circuit breaker stops hammering a failing service and fails fast. Where possible I serve the last good cached response, or accept the request, queue the work and show the user a 'pending' status, then complete it later with a reconciliation job. We alert on it, and for critical dependencies, like OTP SMS, we keep a fallback provider ready to switch to."
-
-Timeouts, retries with backoff + jitter (only for idempotent calls), circuit breaker, cache last good response, queue and process later, show "pending" to the user, alert, and have a fallback provider if critical (e.g. second SMS gateway).
+> 🎤 **Interview answer:** "I make sure **their problem doesn't become our problem**:
+> - A **timeout** on every call.
+> - **Retry** with increasing waits, only for safe-to-repeat calls.
+> - A **circuit breaker** – stop calling them for a while if they keep failing, and fail fast.
+> - Serve the **last good cached** answer if possible.
+> - Or **accept the request, queue the work**, show the user 'pending', and finish it later.
+> - **Alert** the team.
+> - For critical things like OTP SMS, keep a **second provider** ready to switch to."
 
 ### E7. Two users update the same record
 
-> 🎤 **Interview answer:** "This is a race condition, and the fix depends on the case. For counters and stock, I use atomic updates: `$inc`, or an UPDATE with a condition like `stock >= 1`, so the database does the check and the write in one step. For editing a document, I use optimistic locking with a version field: the update only succeeds if the version hasn't changed, otherwise we retry or return 409, so nobody silently overwrites someone else's change. Mongoose and TypeORM both support this. When conflicts are frequent, I use pessimistic locking with `SELECT FOR UPDATE` inside a transaction. For operations across multiple resources, a Redis distributed lock. In the GRN dashboard, for example, a conditional update prevents two users from receiving more than the PO quantity at the same time."
-
-- Atomic updates: `$inc`, `UPDATE … SET stock = stock - 1 WHERE stock >= 1`.
-- **Optimistic locking** – `version` field; update only if version matches, else retry/409. (Mongoose has `optimisticConcurrency`; TypeORM `@VersionColumn`.)
-- **Pessimistic locking** – `SELECT … FOR UPDATE` in a transaction.
-- Distributed lock in Redis for cross-resource operations.
+> 🎤 **Interview answer:** "This is a race condition. The fix depends on the case:
+> - **Counters and stock** – one single update that checks and changes together: `$inc`, or `UPDATE ... WHERE stock >= 1`. The DB makes it safe.
+> - **Editing a document** – a `version` field. The update works only if the version is still the same. If not, someone else changed it first, so I retry or return 409. No one silently overwrites another person's change.
+> - **When clashes are frequent** – lock the row with `SELECT ... FOR UPDATE` inside a transaction.
+> - **Across many resources** – a Redis lock.
+>
+> In the GRN dashboard, a conditional update stops two users from receiving more than the PO quantity at the same time."
 
 ### E8. Zero-downtime deployment
 
-> 🎤 **Interview answer:** "On EC2 with PM2, `pm2 reload` restarts the cluster workers one at a time, so some are always serving. With multiple instances or containers, I do a rolling deployment behind the load balancer: new instances must pass the health check before old ones are removed. Blue-green is another option, with instant rollback. Two things make it truly zero-downtime. First, graceful shutdown: on SIGTERM, stop accepting new connections, finish in-flight requests and close connections. Second, backward-compatible database migrations using expand and contract: add the new column first, deploy code that uses it, backfill, and remove the old column only in a later release, so old and new code can run at the same time."
-
-- PM2 `pm2 reload` (restarts cluster workers one by one), or rolling deploy behind a load balancer (new instances pass health check before old ones are removed), or blue-green.
-- Graceful shutdown on SIGTERM (finish in-flight requests).
-- **Backward-compatible DB migrations** – add a column first, deploy code that uses it, remove old column later (expand → migrate → contract).
+> 🎤 **Interview answer:**
+> - "With PM2: `pm2 reload` restarts the app copies **one by one**, so some are always running.
+> - With many servers: a **rolling deploy** – new servers must pass the health check before old ones are removed. Or **blue-green** – run the new version next to the old one and switch traffic, with instant rollback.
+>
+> Two more things are needed:
+> 1. **Graceful shutdown** – on SIGTERM, stop taking new requests, finish running ones, close connections.
+> 2. **Safe DB changes** – old and new code run at the same time during a deploy, so changes must work for both. First add the new column, then deploy code that uses it, fill the data, and remove the old column only in a later release."
 
 ### E9. Redis goes down
 
-> 🎤 **Interview answer:** "It depends on what Redis is used for. As a cache, the app should degrade, not die: Redis calls are wrapped with short timeouts and try/catch, and fall back to the database. It's slower, so I'd watch DB load closely. For rate limiting, we decide in advance between fail-open, to keep the site available, and fail-closed, for sensitive routes like OTP. For things like sessions, locks or leader election, an outage really hurts. In leader election, for example, no instance can become leader, so publishing pauses, which is a safe failure. That's why in production we use managed Redis with replicas and automatic failover, like ElastiCache Multi-AZ or Sentinel."
-
-- Cache: app should **fall back to DB** (wrap Redis calls in try/catch, short timeouts) – slower but working. Watch DB load.
-- Rate limiter: decide fail-open or fail-closed.
-- Sessions/locks/leader election: affected – use managed Redis with replicas and auto-failover (ElastiCache Multi-AZ / Sentinel).
+> 🎤 **Interview answer:** "It depends on what Redis is used for:
+> - **Cache** – the app should still work. I wrap Redis calls in try/catch with short timeouts, and **fall back to the DB**. Slower, so I watch DB load.
+> - **Rate limiting** – decide in advance: allow requests (keep the site up) or block them (safer for OTP).
+> - **Sessions, locks, leader election** – these really suffer. For leader election, no server can become leader, so publishing pauses. That's a safe failure.
+>
+> That's why in production we use managed Redis with copies and automatic failover (ElastiCache Multi-AZ)."
 
 ### E10. Long-running task like report generation
 
-> 🎤 **Interview answer:** "I make it asynchronous. `POST /reports` validates the request, creates a job record and immediately returns 202 Accepted with a job id. A background worker, consuming from a queue, generates the report, uploads it to S3 and marks the job as done. The client either polls `GET /reports/:jobId`, or gets notified through a WebSocket event, push or email with a pre-signed download link. That keeps API requests short, survives restarts because the job is in a queue, and lets us retry failures."
-
-`POST /reports` → create job, return **202 Accepted + jobId** → worker builds report → stores file in S3 → status `done` → client polls `GET /reports/:jobId` or gets a notification/websocket event with a download link (pre-signed URL).
+> 🎤 **Interview answer:** "I make it a **background job**:
+> 1. `POST /reports` checks the request, creates a job, and **immediately returns 202** with a job id.
+> 2. A worker takes the job from a queue, builds the report, uploads it to S3, and marks the job 'done'.
+> 3. The app either checks `GET /reports/:jobId` from time to time, or gets a notification (WebSocket, push or email) with a download link.
+>
+> This keeps API requests short, and the job isn't lost if a server restarts."
 
 ### E11. Export lakhs of rows to CSV
 
-> 🎤 **Interview answer:** "I stream it instead of loading everything into memory. I open a database cursor, like Mongoose's `find().cursor()` or a Postgres cursor, pass the rows through a transform stream that converts them to CSV lines, and pipe the result into the HTTP response with a Content-Disposition attachment header, using `pipeline` so backpressure and errors are handled. Memory stays flat no matter how many rows there are, and the download starts immediately. If the export is very large or slow, I turn it into a background job that writes the file to S3 and sends a link."
+> 🎤 **Interview answer:** "I **stream** it instead of loading everything into memory. I read rows from the DB **one by one with a cursor**, convert each row into a CSV line, and send it straight into the HTTP response, using `pipeline`. Memory stays low no matter how many rows there are, and the download starts immediately. If the export is very big, I make it a background job that saves the file to S3 and sends a link."
 
-Stream: DB cursor (`Model.find().cursor()` / Postgres cursor) → transform to CSV → `res` with `Content-Disposition: attachment`, using `pipeline` for backpressure. For very big exports, do it as a background job (E10).
+```js
+const { pipeline } = require("stream/promises");
+const { Transform } = require("stream");
+
+app.get("/export", async (req, res, next) => {
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", "attachment; filename=orders.csv");
+  res.write("id,amount,status\n");
+
+  const toCsv = new Transform({
+    objectMode: true,
+    transform(order, _enc, done) {
+      done(null, `${order._id},${order.amount},${order.status}\n`);
+    },
+  });
+
+  try {
+    await pipeline(Order.find().lean().cursor(), toCsv, res);
+  } catch (err) {
+    next(err);
+  }
+});
+```
 
 ### E12. Data sync between two systems fails midway
 
-> 🎤 **Interview answer:** "This is exactly what I handle in the Air India SAP–WMS integration. First, validation before sending, so bad records fail early with a clear reason instead of breaking the other system. Second, persist first, then send: every record is saved in our PostgreSQL database with a status, received, validated, sent, acknowledged or failed, and a unique business reference like the PO or GRN number, so nothing is lost if a call fails midway. Third, the receiving side is idempotent, using upserts by business reference, so re-sending is always safe. Fourth, failed records are retried automatically with backoff, and after the maximum attempts they're marked failed and we alert. Fifth, a dashboard shows failed records with the error reason and a retry option. And a periodic reconciliation job compares records between the two systems to catch anything that slipped through."
-
-(Your SAP ↔ WMS integration.)
-- Validate data before sending.
-- Log every record with status (`pending / sent / failed`) and a unique reference (PO number, GRN number).
-- Make the receiving side **idempotent** (upsert by reference) so re-sending is safe.
-- Retry failed records automatically with backoff; after N tries mark failed and alert.
-- Dashboard / report of failed records with a "retry" option.
-- Periodic **reconciliation** job: compare counts/records in both systems.
+> 🎤 **Interview answer:** "This is exactly what I handle in the Air India SAP–WMS integration.
+> 1. **Validate before sending**, so bad records fail early with a clear reason.
+> 2. **Save first, then send** – every record is saved in our PostgreSQL with a status (received → validated → sent → acknowledged / failed) and its business number (PO or GRN number). So nothing is lost if a call fails midway.
+> 3. **Receiving side is safe to repeat** – it uses 'upsert by PO / GRN number', so sending the same record again is fine.
+> 4. **Automatic retry** for failed records, waiting longer each time. After the max tries, mark it failed and alert.
+> 5. **A dashboard** shows failed records with the reason and a 'Retry' button.
+> 6. **A regular check job** compares records between both systems, to catch anything missed."
 
 ### E13. Someone is brute-forcing the login
 
-> 🎤 **Interview answer:** "I'd apply layered defences. Rate limiting both by IP and by account, because attackers rotate IPs. Progressive delays or a temporary lockout after several failed attempts, and a CAPTCHA after a few failures. The same generic error for a wrong email or a wrong password, so we don't reveal which accounts exist. Offering 2FA or OTP. Logging and alerting on unusual patterns, like many failures across accounts from one IP range. At the edge, a WAF or Nginx rules can block abusive IPs. In Rider Perfume, I applied this kind of rate limiting and attempt limits to the OTP login."
-
-Rate limit by IP and by account, exponential delay / temporary lockout after N failures, CAPTCHA after a few failures, alert on unusual patterns, 2FA/OTP, same error message for wrong email or password (don't reveal which), log attempts.
+> 🎤 **Interview answer:** "I use many layers:
+> - **Rate limit by IP and by account** (attackers change IPs).
+> - **Lock the account for a short time**, or add a growing delay, after several wrong tries. **CAPTCHA** after a few failures.
+> - **Same error message** for wrong email and wrong password, so attackers can't find out which accounts exist.
+> - **2FA / OTP.**
+> - **Log and alert** on unusual patterns, like many failures from one IP range.
+> - **Block bad IPs** at Nginx or a firewall.
+>
+> In Rider Perfume I applied this kind of rate limit and attempt limit to the OTP login."
 
 ### E14. Works locally, fails in production
 
-> 🎤 **Interview answer:** "I compare the two environments systematically. Usually it's one of these: missing or different environment variables and secrets, a different Node version, different data, file path case sensitivity, since Linux is case-sensitive and Windows isn't, CORS allowed origins, network rules or security groups blocking a connection, memory limits, timeouts at Nginx or the load balancer, a stale build in dist, or time zone differences. I check the production logs for the exact error, compare configs, and try to reproduce in staging, which should mirror production as closely as possible."
-
-Check env variables/secrets, Node version, different data, file paths/case sensitivity (Linux), CORS/allowed origins, network/security groups, memory limits, timeouts at Nginx/load balancer, build output (`dist`) up to date, time zone. Compare logs and configs.
+> 🎤 **Interview answer:** "I compare the two environments step by step. It's usually one of these:
+> - missing or different **environment variables** / secrets,
+> - a different **Node version**,
+> - **different data**,
+> - **file name case** – Linux treats `User.js` and `user.js` as different files, Windows doesn't,
+> - **CORS** allowed domains,
+> - **network / firewall rules** blocking a connection,
+> - **memory limits** or **timeouts** at Nginx or the load balancer,
+> - an **old build** in `dist`,
+> - **time zone** differences.
+>
+> I check the production logs for the exact error and try to reproduce it in staging."
 
 ### E15. Logout from all devices
 
-> 🎤 **Interview answer:** "I store refresh tokens per device in the database, so 'logout from all devices' deletes all of the user's refresh tokens, and no device can get a new access token. For access tokens that are still valid, I keep a `tokenVersion` on the user record, cached in Redis, and include it in each JWT. 'Logout all' increments the version, and the auth middleware rejects any token whose version doesn't match. So every existing session ends immediately. The same mechanism is triggered on password change."
-
-Store refresh tokens per device in DB; delete all for the user. For access tokens, keep a `tokenVersion` in the user record (also cached in Redis) and include it in the JWT; increase it on "logout all" so old tokens fail the middleware check.
+> 🎤 **Interview answer:** "I save refresh tokens **per device** in the DB. 'Logout from all devices' deletes all of them, so no device can get a new access token.
+>
+> For access tokens that are still valid, I keep a `tokenVersion` number on the user, and put it inside every JWT. 'Logout all' **increases** the number. The auth middleware rejects any token whose number doesn't match. So every session ends immediately. I do the same on password change."
 
 ### E16. Database goes down
 
-> 🎤 **Interview answer:** "In production the database runs as a replica set or with Multi-AZ, so most failures are handled automatically by failover within seconds. On the app side, the driver reconnects with backoff, the readiness health check reports not-ready so the load balancer stops routing traffic, and APIs return a fast 503 instead of hanging. Where possible, writes can be queued and processed after recovery. We alert immediately. And backups only count if restores are tested, so we keep point-in-time recovery enabled and practise restoring."
-
-Replica set / Multi-AZ failover handles most cases automatically. App side: connection retry with backoff, health check returns not-ready, return 503 instead of hanging, queue writes if possible, alert. Backups + tested restore.
+> 🎤 **Interview answer:** "In production, the database runs with copies (replica set / Multi-AZ), so if the main one dies, a copy takes over automatically in seconds.
+>
+> On the app side:
+> - the DB driver reconnects automatically,
+> - the health check says 'not ready', so the load balancer stops sending traffic,
+> - APIs return a fast **503** instead of hanging,
+> - if possible, writes are queued and done after recovery,
+> - we alert immediately.
+>
+> And backups only matter if we **test restoring** them, so we practise that."
 
 ### E17. Handling time zones
 
-> 🎤 **Interview answer:** "I store all timestamps in UTC in the database, with `timestamptz` in Postgres, and MongoDB Dates are UTC anyway. APIs exchange ISO-8601 strings with the offset. Conversion to the user's local time zone happens only at the edges, in the UI, or when generating user-facing documents like invoices. Cron jobs are scheduled with an explicit time zone, for example IST for Indian business-day jobs, and date-only business fields, like a delivery date, are handled carefully so they don't shift a day when converted."
-
-Store all dates in **UTC** in DB (`timestamptz` in Postgres, `Date` in Mongo is UTC). Convert to user's time zone only in the UI. Run cron jobs with explicit time zones. Use ISO-8601 strings in APIs.
+> 🎤 **Interview answer:** "I save **all dates in UTC** in the database (`timestamptz` in Postgres; MongoDB dates are UTC already). APIs send dates as ISO strings, like `2026-11-25T10:30:00Z`. I convert to the user's local time **only when showing it**, in the UI or on an invoice. Cron jobs run with a clear time zone, like IST for Indian business jobs. And for date-only fields, like a delivery date, I'm careful they don't shift by a day when converted."
 
 ### E18. Code review – what do you check?
 
-> 🎤 **Interview answer:** "When I reviewed code for the 6 junior developers I mentored at Appsinvo, I checked, in order of importance: correctness and edge cases, like empty input, nulls and concurrency; security, meaning auth and ownership checks, input validation and injection risks; error handling; and database usage: correct indexes, no N+1 queries, pagination on lists, transactions where needed. Then maintainability: naming, readability, duplication and following our folder structure, then tests for the new logic, and no secrets or leftover console logs. Just as important is how I give feedback: politely, explaining why, with an example or a link, and separating must-fix issues from suggestions. And I appreciate good work, so reviews become a learning tool, not a gate."
-
-(You reviewed code for 6 juniors.)
-Correctness and edge cases, input validation and security (auth checks, injection), error handling, DB queries and indexes (N+1, missing pagination), naming and readability, duplication, tests added, no secrets/console logs, consistent structure. Give feedback politely with reasons and examples.
+> 🎤 **Interview answer:** "When I reviewed code for the 6 junior developers I mentored at Appsinvo, I checked, in this order:
+> 1. **Does it work correctly?** Edge cases like empty input, null, two requests at once.
+> 2. **Security** – auth and ownership checks, input validation, injection.
+> 3. **Error handling.**
+> 4. **Database** – right indexes, no N+1 queries, pagination on lists, transactions where needed.
+> 5. **Readability** – naming, no duplicate code, follows our folder structure.
+> 6. **Tests** for the new logic.
+> 7. **No secrets or leftover console.logs.**
+>
+> **How** I give feedback matters just as much: politely, explaining why, with an example, and marking clearly what must be fixed vs what is a suggestion. And I praise good work, so reviews help people learn."
 
 ---
 

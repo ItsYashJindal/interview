@@ -24,7 +24,13 @@
 
 ### 1. CRUD operations
 
-> 🎤 **Interview answer:** "In MongoDB, create is `insertOne` or `insertMany`. Read is `find` with a filter and a projection, usually with sort, skip or limit, or `findOne`. Update is `updateOne` or `updateMany` with operators like `$set`, `$inc`, `$push` and `$addToSet`, and `upsert: true` inserts the document if nothing matches. Delete is `deleteOne` or `deleteMany`. In real projects I almost always use update operators instead of replacing whole documents, because they're atomic and avoid overwriting concurrent changes. For example, I reduce stock with `$inc` and a condition `stock >= qty` in the filter, so it can never go negative."
+> 🎤 **Interview answer:** "CRUD means Create, Read, Update, Delete.
+> - **Create** – `insertOne` / `insertMany`.
+> - **Read** – `find` (many) or `findOne`, with a filter, the fields I want, and sort / skip / limit.
+> - **Update** – `updateOne` / `updateMany` with operators like `$set` (change a field), `$inc` (add to a number), `$push` (add to an array). With `upsert: true`, it creates the document if none is found.
+> - **Delete** – `deleteOne` / `deleteMany`.
+>
+> In real projects I use update operators instead of replacing the whole document. For example, to reduce stock safely I use `$inc: { stock: -qty }` with the filter `stock >= qty`, so stock can never go below zero."
 
 ```js
 // Create
@@ -32,14 +38,14 @@ db.users.insertOne({ name: "Yash", age: 27 });
 db.users.insertMany([{ name: "A" }, { name: "B" }]);
 
 // Read
-db.users.find({ age: { $gte: 18 } }, { name: 1, email: 1 })  // filter, projection
+db.users.find({ age: { $gte: 18 } }, { name: 1, email: 1 })  // filter, fields to return
         .sort({ createdAt: -1 }).skip(0).limit(10);
 db.users.findOne({ email: "a@x.com" });
 
 // Update
 db.users.updateOne({ _id: id }, { $set: { name: "New" }, $inc: { loginCount: 1 } });
 db.users.updateMany({ active: false }, { $set: { archived: true } });
-db.users.updateOne({ email }, { $set: { name } }, { upsert: true }); // insert if not found
+db.users.updateOne({ email }, { $set: { name } }, { upsert: true }); // create if not found
 
 // Delete
 db.users.deleteOne({ _id: id });
@@ -47,23 +53,19 @@ db.users.deleteMany({ archived: true });
 ```
 
 **Common operators:**
-- Compare: `$eq $ne $gt $gte $lt $lte $in $nin`
-- Logic: `$and $or $not $nor`
-- Element: `$exists $type`
-- Array: `$all $elemMatch $size`
-- Update: `$set $unset $inc $push $pull $addToSet $rename`
+- Compare: `$eq $ne $gt $gte $lt $lte $in $nin` (equal, not equal, greater than, ...)
+- Logic: `$and $or $not`
+- Field exists: `$exists`
+- Arrays: `$all $elemMatch $size`
+- Update: `$set $unset $inc $push $pull $addToSet`
 
 **Q. updateOne vs findOneAndUpdate?**
 
-> 🎤 **Interview answer:** "`updateOne` only returns metadata, like matchedCount and modifiedCount. `findOneAndUpdate` returns the document itself, before or after the update depending on the `new` or `returnDocument` option. Both are atomic on a single document. I use `updateOne` when I just need to change something, since it's lighter, and `findOneAndUpdate` when I need the updated document back, for example to atomically claim a job and get its details in one step."
-
-`updateOne` returns only a result count. `findOneAndUpdate` returns the document (before or after update with `{ new: true }` in Mongoose / `returnDocument: "after"` in driver). Both are atomic for a single document.
+> 🎤 **Interview answer:** "`updateOne` only tells me how many documents were matched and changed. `findOneAndUpdate` gives me the **document itself**, before or after the update (`{ new: true }` in Mongoose gives the updated one). I use `updateOne` when I just need to change something, and `findOneAndUpdate` when I need the updated document back."
 
 **Q. Soft delete vs hard delete?**
 
-> 🎤 **Interview answer:** "A hard delete permanently removes the record. A soft delete just marks it, with `isDeleted: true` or a `deletedAt` timestamp, so the data can be restored, audited, and doesn't break references like old orders pointing to a deleted product. The trade-off is that every query must filter out deleted records. I handle that in a base query or a Mongoose pre-find hook, and I index the field or use a partial index. For legal or privacy deletion requests, we still do a hard delete or anonymise the data."
-
-Soft delete = set `isDeleted: true` / `deletedAt` so data can be recovered and audited. Remember to filter it out in all queries (and index it).
+> 🎤 **Interview answer:** "**Hard delete** removes the record forever. **Soft delete** just marks it, like `isDeleted: true` or `deletedAt: <date>`. The data can be restored later, and old orders that point to a deleted product don't break. The downside: every query must skip deleted records. I handle that in one common place, like a Mongoose `pre('find')` hook, and I add an index on that field."
 
 ---
 
@@ -71,56 +73,63 @@ Soft delete = set `isDeleted: true` / `deletedAt` so data can be recovered and a
 
 **Q. What is an index?**
 
-> 🎤 **Interview answer:** "An index is a separate sorted data structure, a B-tree in MongoDB, that stores the values of one or more fields with pointers to the documents. It's like the index at the back of a book: instead of reading every page, you go straight to the right one. Without an index MongoDB does a COLLSCAN and reads every document. With one, it does an IXSCAN and reads only the matching entries. The right indexes were the main reason I could bring a user-listing API down from 4.5 seconds to 550 milliseconds."
-
-A separate sorted data structure (B-tree) that stores field values with pointers to documents. Like a book index – find a topic without reading every page.
-Without an index MongoDB does a **COLLSCAN** (reads every document). With an index it does **IXSCAN**.
+> 🎤 **Interview answer:** "An index is like the index at the back of a book. Instead of reading every page to find a topic, you look it up in the index and jump to the right page.
+>
+> Without an index, MongoDB reads **every document** to find matches. This is called a COLLSCAN (collection scan), and it's slow. With an index, it jumps straight to the matching documents. This is called IXSCAN (index scan).
+>
+> Adding the right indexes was the main reason I could bring a user-listing API down from 4.5 seconds to 550 ms."
 
 **Types of indexes:**
 | Type | Example | Use |
 |---|---|---|
-| Single field | `{ email: 1 }` | Lookup by one field |
+| Single field | `{ email: 1 }` | Search by one field |
 | Compound | `{ status: 1, createdAt: -1 }` | Filter + sort together |
 | Unique | `{ email: 1 }, { unique: true }` | No duplicate emails |
 | Multikey | index on an array field | Search inside arrays (tags) |
 | Text | `{ title: "text" }` | Basic keyword search |
-| TTL | `{ createdAt: 1 }, { expireAfterSeconds: 300 }` | Auto-delete OTPs/sessions |
-| 2dsphere | `{ location: "2dsphere" }` | Geo queries ("near me") – used in matrimony project |
+| TTL | `{ createdAt: 1 }, { expireAfterSeconds: 300 }` | Auto-delete old documents (OTPs, sessions) |
+| 2dsphere | `{ location: "2dsphere" }` | Location search ("near me") – used in matrimony project |
 | Partial | index only where `isDeleted: false` | Smaller index |
-| Sparse | skip documents missing the field | Optional fields |
 
 **Q. ESR rule for compound indexes**
 
-> 🎤 **Interview answer:** "ESR stands for Equality, Sort, Range. It's the recommended order for fields in a compound index. First the fields you match exactly, like `status: 'active'`, then the fields you sort on, like `createdAt`, and last the fields with range conditions, like `age >= 25`. This way MongoDB can jump to the equality values, read entries already in sorted order without an in-memory sort, and then apply the range. If you put the range before the sort, MongoDB has to sort in memory, which is slow and has memory limits."
+> 🎤 **Interview answer:** "ESR tells the best order of fields in a compound index: **E**quality → **S**ort → **R**ange.
+> - **Equality** – fields matched exactly, like `status: 'active'`.
+> - **Sort** – the field we sort on, like `createdAt`.
+> - **Range** – fields with `>`, `<`, like `age >= 25`.
+>
+> With this order, MongoDB finds the matches and reads them already sorted. If the order is wrong, MongoDB has to sort in memory, which is slow."
 
-Order fields as **E**quality → **S**ort → **R**ange.
-Query: `find({ status: "active", age: { $gte: 25 } }).sort({ createdAt: -1 })`
-Best index: `{ status: 1, createdAt: -1, age: 1 }`
+```js
+// Query
+find({ status: "active", age: { $gte: 25 } }).sort({ createdAt: -1 })
+
+// Best index: Equality, Sort, Range
+{ status: 1, createdAt: -1, age: 1 }
+```
 
 **Q. Prefix rule**
 
-> 🎤 **Interview answer:** "A compound index can be used by any query on its leading fields, its prefixes. So an index on a, b, c supports queries on a, on a and b, and on a, b and c, but not queries on only b or only c, because the index is sorted by a first. That's why I design compound indexes around the most common query patterns, and why I don't create a separate index on `a` if the compound index already starts with it."
-
-Index `{ a: 1, b: 1, c: 1 }` can serve queries on `a`, `a+b`, `a+b+c` – but **not** `b` alone or `c` alone.
+> 🎤 **Interview answer:** "A compound index on `a, b, c` can be used for queries on `a`, on `a + b`, and on `a + b + c`. But **not** for a query on only `b` or only `c`. It's like a phone book sorted by surname, then first name: you can find all 'Sharma's easily, but you can't find all 'Rahul's quickly."
 
 **Q. How do you check if a query uses an index?**
 
-> 🎤 **Interview answer:** "I run the query with `.explain('executionStats')`. I check three things: the stage, where IXSCAN is good and COLLSCAN on a large collection is bad; totalDocsExamined compared to nReturned, which should be close, because examining 100,000 documents to return 10 means the index is wrong or missing; and executionTimeMillis. If I see a SORT stage, the sort isn't covered by the index. In SQL the equivalent is `EXPLAIN ANALYZE`."
+> 🎤 **Interview answer:** "I run the query with `.explain('executionStats')` and check three things:
+> 1. **stage** – IXSCAN is good, COLLSCAN on a big collection is bad.
+> 2. **totalDocsExamined vs nReturned** – they should be close. If MongoDB checks 100,000 documents to return 10, the index is wrong or missing.
+> 3. **executionTimeMillis** – how long it took.
+>
+> In SQL, the same tool is `EXPLAIN ANALYZE`."
 
 ```js
 db.users.find({ email: "a@x.com" }).explain("executionStats");
 ```
-Look at: `stage` (IXSCAN good, COLLSCAN bad), `totalDocsExamined` vs `nReturned` (should be close), `executionTimeMillis`.
 
 **Q. Downsides of indexes?**
 
-> 🎤 **Interview answer:** "Indexes speed up reads but have costs. Every insert, update and delete must also update every index, so writes get slower. They use disk and, more importantly, RAM, because the working set of indexes should fit in memory. Too many or unused indexes waste resources. So I index only for real query patterns, prefer one good compound index over many single-field ones, and check `$indexStats` to remove unused indexes."
+> 🎤 **Interview answer:** "Indexes make reads faster but writes slower, because every insert or update must also update every index. They also use RAM and disk. So I only add indexes for queries we really run, and I remove indexes that are never used."
 
-- Every insert/update must also update all indexes → slower writes.
-- Uses RAM and disk.
-- Too many unused indexes waste memory. Check usage with `$indexStats`.
-
-**Covered query:** when all fields in the filter and projection are in the index, MongoDB answers from the index only, without reading documents – fastest.
+**Covered query:** when all the fields in the filter and the result are inside the index, MongoDB answers from the index alone, without reading the documents. This is the fastest.
 
 ---
 
@@ -128,33 +137,41 @@ Look at: `stage` (IXSCAN good, COLLSCAN bad), `totalDocsExamined` vs `nReturned`
 
 **Q. What is it?**
 
-> 🎤 **Interview answer:** "The aggregation pipeline is MongoDB's framework for data processing and analytics. Documents flow through a sequence of stages, and each stage transforms them, like Linux pipes. `$match` filters, `$group` groups and calculates sums or averages, `$project` shapes the fields, `$sort` and `$limit` order and paginate, `$lookup` joins other collections, `$unwind` flattens arrays, and `$facet` runs several pipelines in parallel. I've used it for sales reports, top-selling products, dashboard stats and geo-search with `$geoNear`. Performance-wise, I always put `$match` and `$sort` first so they can use indexes, and project early to reduce document size."
-
-A list of stages; documents flow through each stage and get filtered, changed, grouped. Like Linux pipes.
+> 🎤 **Interview answer:** "The aggregation pipeline is MongoDB's way to do reports and calculations. Documents pass through a list of steps (stages), one after another, like water through a series of filters. Each step changes the data:
+> - `$match` – filter (like WHERE),
+> - `$group` – group and calculate totals or averages,
+> - `$project` – choose which fields to show,
+> - `$sort`, `$limit` – order and limit,
+> - `$lookup` – join with another collection,
+> - `$unwind` – turn an array into separate documents.
+>
+> I've used it for sales reports, top-selling products and dashboard numbers. Tip: I always put `$match` first, so it can use indexes and the next steps have less data to work on."
 
 **Common stages:**
 | Stage | Does |
 |---|---|
 | `$match` | Filter (like WHERE) – put it **first** so indexes are used |
-| `$project` / `$addFields` | Choose / compute fields |
-| `$group` | Group and calculate (`$sum`, `$avg`, `$max`, `$push`) |
+| `$project` / `$addFields` | Choose fields / add calculated fields |
+| `$group` | Group and calculate (`$sum`, `$avg`, `$max`) |
 | `$sort`, `$skip`, `$limit` | Order and paginate |
 | `$lookup` | Join with another collection |
-| `$unwind` | Turn an array into one document per element |
-| `$facet` | Run several pipelines at once (data + total count) |
+| `$unwind` | Make one document per array item |
+| `$facet` | Run several pipelines at once (e.g. data + total count) |
 | `$count` | Count documents |
-| `$geoNear` | Geo distance (must be first stage) |
 
 **Example – monthly sales report for delivered orders:**
 ```js
 db.orders.aggregate([
+  // 1. only delivered orders from this year
   { $match: { status: "delivered", createdAt: { $gte: ISODate("2026-01-01") } } },
+  // 2. group by month and calculate
   { $group: {
       _id: { month: { $month: "$createdAt" } },
       totalSales: { $sum: "$amount" },
       orders: { $sum: 1 },
       avgOrder: { $avg: "$amount" },
   }},
+  // 3. sort by month
   { $sort: { "_id.month": 1 } },
 ]);
 ```
@@ -162,13 +179,13 @@ db.orders.aggregate([
 **Example – top 5 selling products:**
 ```js
 db.orders.aggregate([
-  { $unwind: "$items" },
-  { $group: { _id: "$items.productId", qty: { $sum: "$items.qty" } } },
-  { $sort: { qty: -1 } },
-  { $limit: 5 },
-  { $lookup: { from: "products", localField: "_id", foreignField: "_id", as: "product" } },
+  { $unwind: "$items" },                                                   // one doc per item
+  { $group: { _id: "$items.productId", qty: { $sum: "$items.qty" } } },    // total qty per product
+  { $sort: { qty: -1 } },                                                  // most sold first
+  { $limit: 5 },                                                           // top 5
+  { $lookup: { from: "products", localField: "_id", foreignField: "_id", as: "product" } }, // get product
   { $unwind: "$product" },
-  { $project: { _id: 0, name: "$product.name", qty: 1 } },
+  { $project: { _id: 0, name: "$product.name", qty: 1 } },                 // show name + qty
 ]);
 ```
 
@@ -183,21 +200,24 @@ db.users.aggregate([
 ]);
 ```
 
-**Tips:** `$match` and `$sort` early (to use indexes), `$project` early to drop unused fields, aggregation has 100 MB memory limit per stage → `allowDiskUse: true` for big data.
+**Tips:** `$match` and `$sort` early (to use indexes). `$project` early to remove unused fields. Each stage can use max 100 MB memory; for bigger data use `allowDiskUse: true`.
 
 ---
 
 ### 4. Population vs lookup
 
-> 🎤 **Interview answer:** "Both join data from another collection, but in different places. Mongoose `populate` runs in Node: Mongoose first fetches the main documents and then sends a separate query with `$in` for the referenced ids, and merges the results. It's very easy to use, with a `ref` in the schema, but it's extra round trips, and you can't filter or group on the joined fields in the database. `$lookup` is an aggregation stage that does the join inside MongoDB in one query, so I can filter, sort and group on the joined data. I use populate for simple cases like an order with the user's name, and `$lookup` for reports. If I need either one constantly, I reconsider the schema and maybe embed or duplicate a few fields."
+> 🎤 **Interview answer:** "Both bring in data from another collection, like getting the user details inside an order. The difference is **where** the join happens.
+> - **`populate`** (Mongoose) – happens in Node. Mongoose first gets the orders, then runs a **second query** to get the users, and merges them. Very easy to use, but it's an extra query, and I can't filter or group on the user fields in the database.
+> - **`$lookup`** (MongoDB) – happens inside the database, in one query. I can filter, sort and group on the joined data.
+>
+> I use `populate` for simple cases like 'order with user name', and `$lookup` for reports. If I need a join all the time, I rethink the schema."
 
 | | Mongoose `populate()` | MongoDB `$lookup` |
 |---|---|---|
-| Where it runs | In Node (Mongoose sends **extra queries**) | Inside MongoDB (one aggregation) |
-| Queries | 1 + 1 per populated path | 1 |
+| Where it runs | In Node (extra queries) | Inside MongoDB (one query) |
 | Ease | Very easy, uses `ref` in schema | More code |
-| Filter/sort/group on joined data | Limited | Full power of pipeline |
-| Best for | Simple "get order with user name" | Reports, filtering on joined fields, large data |
+| Filter/sort/group on joined data | Limited | Full power |
+| Best for | Simple "get order with user name" | Reports, filtering on joined fields |
 
 ```js
 // populate
@@ -211,33 +231,35 @@ await Order.aggregate([
 ]);
 ```
 
-**Gotcha:** populate in a list of 1000 orders is fine (Mongoose batches with `$in`), but nested populates on big lists can get slow. Both are slower than embedding – if you join very often, re-check your schema design.
-
 ---
 
 ### 5. MongoDB schema design
 
-> 🎤 **Interview answer:** "The main rule I follow is: design the schema around how the data is read, not how it would look in tables. I embed when the data is read together, is one-to-few and doesn't grow without limit, like addresses inside a user. I reference when it's one-to-many with unbounded growth or used independently, like orders, messages or payments. I keep the 16 MB document limit in mind, and never let an array grow forever.
+> 🎤 **Interview answer:** "My main rule: design the schema based on **how the app reads the data**.
 >
-> I also use patterns like extended reference, which copies a few needed fields like the product name and price into the order as a snapshot, and the computed pattern, which stores counters like ratingCount instead of recalculating on every read. In my matrimony project, preferences and photos are embedded in the profile, while interests, messages and payments are separate collections with proper indexes, including a 2dsphere index for location."
-
-**Main rule:** *Design for how the data is read*, not just how it looks.
+> I **embed** (store inside the same document) when the data is always read together and is small, like a user's 2–3 addresses.
+>
+> I **reference** (store only the id, keep data in another collection) when the data can grow a lot or is used on its own, like orders, messages or payments.
+>
+> I remember that a document can be max 16 MB, so I never let an array grow forever.
+>
+> In my matrimony project, preferences and photos are embedded in the profile, but interests, messages and payments are separate collections, because they keep growing."
 
 **Embed vs reference:**
 | Embed (store inside) | Reference (store id) |
 |---|---|
 | Data is read together (user + address) | Data is used separately |
-| One-to-few (a user has 3 addresses) | One-to-many / many-to-many (user has 10,000 orders) |
-| Child doesn't make sense alone | Child is large or grows without limit |
-| One read, atomic update | Need join (populate/$lookup) |
+| One-to-few (a user has 3 addresses) | One-to-many (a user has 10,000 orders) |
+| Small, doesn't grow much | Big or keeps growing |
+| One read, simple update | Needs a join (populate / $lookup) |
 
-**Limits to remember:** document max size **16 MB**; arrays that grow forever (all chat messages inside a conversation document) are a bad idea – store messages in a separate collection.
+**Limits to remember:** a document can be max **16 MB**. Don't keep all chat messages inside one conversation document – store messages in a separate collection.
 
 **Patterns (simple):**
-- **Subset pattern** – keep last 5 reviews embedded in product, rest in a reviews collection.
-- **Extended reference** – copy a few fields you always need (store `userName` inside order to avoid a join). Accept small duplication.
-- **Computed pattern** – store `totalOrders` / `rating` counters instead of calculating on every read.
-- **Bucket pattern** – group time-series data (e.g. one document per sensor per hour).
+- **Subset pattern** – keep the last 5 reviews inside the product, the rest in a reviews collection.
+- **Extended reference** – copy a few fields you always need (like `userName` inside the order) to avoid a join.
+- **Computed pattern** – save counters like `totalOrders` or `rating`, instead of calculating them on every read.
+- **Bucket pattern** – group time-based data (e.g. one document per sensor per hour).
 
 **Example – matrimony profile (my project):**
 ```js
@@ -256,7 +278,7 @@ const profileSchema = new Schema({
 profileSchema.index({ location: "2dsphere" });
 profileSchema.index({ gender: 1, religion: 1, dob: 1 });
 ```
-Messages, interests (sent/received) and payments are separate collections because they grow a lot.
+Messages, interests and payments are separate collections because they grow a lot.
 
 ---
 
@@ -264,7 +286,14 @@ Messages, interests (sent/received) and payments are separate collections becaus
 
 ### 6. SQL joins
 
-> 🎤 **Interview answer:** "Joins combine rows from tables based on a related column. INNER JOIN returns only rows that match in both tables, like users who have orders. LEFT JOIN returns all rows from the left table, with NULLs where there's no match, so I use it for things like 'all users with their order count, including zero', or with `WHERE o.id IS NULL` to find users who never ordered. RIGHT JOIN is the mirror image. FULL OUTER JOIN returns everything from both, and MySQL doesn't support it, so you UNION a left and a right join. CROSS JOIN gives every combination. A SELF JOIN joins a table to itself, like employees to their managers."
+> 🎤 **Interview answer:** "A join combines rows from two tables using a common column.
+> - **INNER JOIN** – only rows that match in both tables. Example: users who have orders.
+> - **LEFT JOIN** – all rows from the left table, plus matching rows from the right. If no match, the right side is NULL. Example: all users with their order count, even 0.
+> - **RIGHT JOIN** – the opposite of LEFT JOIN.
+> - **FULL OUTER JOIN** – all rows from both tables.
+> - **SELF JOIN** – a table joined with itself, like employee → manager.
+>
+> A useful trick: LEFT JOIN + `WHERE o.id IS NULL` finds users who never ordered."
 
 Tables: `users(id, name)`, `orders(id, user_id, amount)`
 
@@ -273,7 +302,7 @@ Tables: `users(id, name)`, `orders(id, user_id, amount)`
 | `INNER JOIN` | Only rows that match in both tables |
 | `LEFT JOIN` | All rows from left + matching from right (NULL if no match) |
 | `RIGHT JOIN` | All rows from right + matching from left |
-| `FULL OUTER JOIN` | All rows from both (not in MySQL – use UNION of left and right) |
+| `FULL OUTER JOIN` | All rows from both (not in MySQL) |
 | `CROSS JOIN` | Every combination (rows × rows) |
 | `SELF JOIN` | Table joined with itself (employee → manager) |
 
@@ -304,12 +333,16 @@ LEFT JOIN employees m ON e.manager_id = m.id;
 
 ### 7. Primary and foreign keys
 
-> 🎤 **Interview answer:** "A primary key uniquely identifies each row: it must be unique and not null, there's one per table, it can be composite, and it's indexed automatically. A foreign key is a column that references another table's primary key, and the database enforces referential integrity, so you can't create an order for a user that doesn't exist. With ON DELETE we decide what happens to the children: CASCADE, SET NULL or RESTRICT. One practical point: Postgres doesn't automatically index foreign key columns, so I add those indexes myself, because joins and deletes depend on them. In the Air India SAP–WMS work, POs, PO lines, GRNs and materials are all linked with foreign keys."
+> 🎤 **Interview answer:**
+> - "**Primary key** – a column that uniquely identifies each row, like `id`. It must be unique and not empty. One per table. It is indexed automatically.
+> - **Foreign key** – a column that points to the primary key of another table, like `orders.user_id → users.id`. The database makes sure it's valid, so you can't create an order for a user that doesn't exist.
+>
+> With `ON DELETE` we decide what happens to child rows when the parent is deleted: delete them too (CASCADE), set to NULL, or block the delete (RESTRICT).
+>
+> One practical point: Postgres does **not** index foreign key columns by itself, so I add those indexes myself."
 
-- **Primary key** – uniquely identifies each row. Unique + NOT NULL. One per table (can be multiple columns = composite key). Automatically indexed.
-- **Foreign key** – a column that points to the primary key of another table. Keeps data consistent (can't create an order for a user that doesn't exist).
-- **Unique key** – unique values but can allow NULL; a table can have many.
-- **Candidate key** – any column that could be a primary key. **Composite key** – PK made of 2+ columns (e.g. `order_id + product_id`).
+- **Unique key** – values must be unique, can be many per table.
+- **Composite key** – a primary key made of 2+ columns (e.g. `order_id + product_id`).
 
 ```sql
 CREATE TABLE orders (
@@ -318,18 +351,20 @@ CREATE TABLE orders (
   amount NUMERIC(10,2) NOT NULL CHECK (amount >= 0),
   created_at TIMESTAMP DEFAULT NOW()
 );
-CREATE INDEX idx_orders_user_id ON orders(user_id);  -- FK is NOT auto-indexed in Postgres
+CREATE INDEX idx_orders_user_id ON orders(user_id);  -- not automatic in Postgres
 ```
 
-**ON DELETE options:** `CASCADE` (delete children), `SET NULL`, `RESTRICT` / `NO ACTION` (block delete).
+**Q. Natural key vs surrogate key?**
 
-**Q. Natural key vs surrogate key?** Natural = real data (email). Surrogate = generated id (SERIAL/UUID). Prefer surrogate as PK because real data can change.
+> 🎤 **Interview answer:** "A **natural key** is real data used as the id, like an email. A **surrogate key** is a generated id with no meaning, like `1, 2, 3` or a UUID. I prefer surrogate keys, because real data can change. If a user changes their email and email is the primary key, every table that points to it breaks. I still keep a unique rule on email."
 
-> 🎤 **Interview answer:** "A natural key is real business data used as the key, like an email or a PO number. A surrogate key is a generated id with no business meaning, like an auto-increment or a UUID. I prefer surrogate keys as primary keys, because business data can change, for example a user changing their email, and changing a primary key breaks all references. I still put a unique constraint on the natural key, like a unique email."
+**Q. UUID vs auto-increment?**
 
-**Q. UUID vs auto-increment?** Auto-increment: small, fast, ordered, but guessable and hard to merge across DBs. UUID: unique everywhere, not guessable, bigger and random order (slower inserts in B-tree; UUIDv7 is time-ordered and fixes this).
-
-> 🎤 **Interview answer:** "Auto-increment ids are small, fast to index and naturally ordered, but they're guessable, which is a security issue if exposed in URLs, and they're hard to merge across databases or generate before inserting. UUIDs are globally unique and not guessable, and they can be generated in the app, which is good for distributed systems, but they're larger and random UUIDv4 values cause scattered B-tree inserts. UUIDv7 solves that because it's time-ordered. A common approach is an internal bigint id plus a public UUID."
+> 🎤 **Interview answer:**
+> - "**Auto-increment** (1, 2, 3...) – small and fast, but easy to guess. If `/orders/105` exists, someone can try `/orders/106`.
+> - **UUID** (long random string) – unique everywhere and not guessable, and the app can create it before saving. But it's bigger, and random values make inserts a bit slower. UUIDv7 is time-ordered and fixes this.
+>
+> A common approach: a number id inside the DB, and a UUID for public URLs."
 
 ---
 
@@ -337,18 +372,19 @@ CREATE INDEX idx_orders_user_id ON orders(user_id);  -- FK is NOT auto-indexed i
 
 **Q. What is a transaction?**
 
-> 🎤 **Interview answer:** "A transaction groups multiple database operations into one unit, so either all of them succeed and are committed, or if anything fails, all of them are rolled back. The classic example is a money transfer: debiting A and crediting B must both happen or neither. Transactions follow ACID: atomicity, consistency, isolation and durability. In the Air India GRN flow, I used a Prisma `$transaction` to create the GRN and update the received quantity on the PO together, so we never have a GRN without the PO being updated."
-
-A group of queries that run as **one unit** – all succeed or all are rolled back. Example: transfer money – debit A and credit B must both happen or neither.
+> 🎤 **Interview answer:** "A transaction groups many database operations into **one unit**: either all of them succeed, or none of them happen. If any step fails, everything is undone (rolled back).
+>
+> Classic example: money transfer. Taking money from A and adding it to B must both happen, or neither.
+>
+> In the Air India project, I used a Prisma transaction to create a GRN (goods received note) and update the received quantity on the purchase order together. So we never have a GRN without the PO being updated."
 
 **ACID:**
 
-> 🎤 **Interview answer:** "Atomicity means all or nothing: if any step fails, everything is rolled back. Consistency means the database moves from one valid state to another, and all constraints, foreign keys and checks still hold. Isolation means concurrent transactions don't see each other's half-finished work, and how strictly depends on the isolation level. Durability means once a transaction is committed, it survives crashes, because it's written to the write-ahead log."
-
-- **Atomicity** – all or nothing.
-- **Consistency** – data moves from one valid state to another (constraints hold).
-- **Isolation** – parallel transactions don't see each other's half-done work.
-- **Durability** – once committed, data survives a crash.
+> 🎤 **Interview answer:** "ACID is four promises a transaction gives:
+> - **Atomicity** – all or nothing.
+> - **Consistency** – data always follows the rules (constraints, foreign keys).
+> - **Isolation** – two transactions running at the same time don't see each other's half-done work.
+> - **Durability** – once saved (committed), the data survives even a crash."
 
 ```sql
 BEGIN;
@@ -362,11 +398,14 @@ COMMIT;   -- or ROLLBACK on error
 ```ts
 await prisma.$transaction(async (tx) => {
   const grn = await tx.grn.create({ data: grnData });
-  await tx.purchaseOrder.update({ where: { id: poId }, data: { receivedQty: { increment: qty } } });
+  await tx.purchaseOrder.update({
+    where: { id: poId },
+    data: { receivedQty: { increment: qty } },
+  });
 });
 ```
 
-**MongoDB (multi-document, needs replica set):**
+**MongoDB (many documents, needs a replica set):**
 ```js
 const session = await mongoose.startSession();
 try {
@@ -382,29 +421,43 @@ try {
   session.endSession();
 }
 ```
-Note: a single-document update in MongoDB is already atomic. Use transactions only when several documents must change together.
+Note: an update on **one** MongoDB document is already all-or-nothing. Use transactions only when several documents must change together.
 
 **Isolation levels (low → high):**
 
-> 🎤 **Interview answer:** "There are four standard levels. Read Uncommitted allows dirty reads, meaning you can see uncommitted data. Read Committed, the Postgres default, only shows committed data, but the same row read twice can change, which is a non-repeatable read. Repeatable Read, the MySQL InnoDB default, guarantees the same row reads the same within the transaction, though phantom rows are possible in theory. Serializable behaves as if transactions ran one by one, which is safest but slowest, and may need retries on serialization failures. For things like stock and wallet updates, I usually stay on Read Committed and use row locks with `SELECT FOR UPDATE` or atomic conditional updates, instead of raising the level for everything."
+> 🎤 **Interview answer:** "Isolation level decides how much one transaction can see of another transaction's changes. From weakest to strongest:
+> - **Read Uncommitted** – can see other transactions' unsaved changes (dirty read).
+> - **Read Committed** (Postgres default) – sees only saved data, but if you read the same row twice, it may change in between.
+> - **Repeatable Read** (MySQL default) – the same row always reads the same inside the transaction.
+> - **Serializable** – acts like transactions run one by one. Safest but slowest.
+>
+> For stock and wallet updates, I usually keep the default level and lock the rows with `SELECT ... FOR UPDATE`, instead of raising the level for everything."
 
-| Level | Prevents | Allows |
+| Level | Prevents | Still allows |
 |---|---|---|
 | Read Uncommitted | – | Dirty reads |
-| Read Committed (Postgres default) | Dirty reads | Non-repeatable reads |
-| Repeatable Read (MySQL InnoDB default) | Dirty + non-repeatable reads | Phantom reads (in theory) |
-| Serializable | Everything | Slowest, may need retries |
+| Read Committed (Postgres default) | Dirty reads | Row may change if read twice |
+| Repeatable Read (MySQL default) | Dirty reads + row changes | New rows may appear (phantom) |
+| Serializable | Everything | Slowest |
 
-- **Dirty read** – reading data another transaction hasn't committed.
-- **Non-repeatable read** – same row read twice gives different values.
-- **Phantom read** – same query returns new rows the second time.
+- **Dirty read** – reading data another transaction hasn't saved yet.
+- **Non-repeatable read** – the same row read twice gives different values.
+- **Phantom read** – the same query returns new rows the second time.
 
-**Locks:** `SELECT ... FOR UPDATE` locks the selected rows until commit – used for stock or wallet updates.
+**Locks:**
 
-> 🎤 **Interview answer:** "`SELECT ... FOR UPDATE` locks the selected rows until the transaction commits, so another transaction trying to update them has to wait. That's pessimistic locking, good when conflicts are likely, like stock or wallet balance. The alternative is optimistic locking with a version column, where we update only if the version is unchanged and retry if zero rows were updated, which is good when conflicts are rare. For deadlocks, the database detects them and kills one transaction, and we prevent them by always locking rows in the same order and keeping transactions short."
+> 🎤 **Interview answer:** "There are two ways to stop two people changing the same row at the same time:
+> - **Pessimistic locking** – `SELECT ... FOR UPDATE` locks the row. Anyone else who wants to change it must wait until I'm done. Good when clashes are common, like stock or wallet.
+> - **Optimistic locking** – no lock. I keep a `version` number on the row and update only if the version is still the same. If 0 rows were updated, someone else changed it first, so I retry. Good when clashes are rare.
+>
+> A **deadlock** is when two transactions wait for each other forever. The database kills one of them. To avoid it, I always lock rows in the same order and keep transactions short."
 
-**Optimistic locking:** keep a `version` column; `UPDATE ... WHERE id = 1 AND version = 5`; if 0 rows updated, someone else changed it → retry.
-**Deadlock:** two transactions wait for each other's locks. DB kills one. Avoid by always locking rows in the same order and keeping transactions short.
+```sql
+-- Optimistic locking
+UPDATE products SET stock = stock - 1, version = version + 1
+WHERE id = 1 AND version = 5;
+-- 0 rows updated → someone else changed it → retry
+```
 
 See also [11 Scenarios → Q7](11-scenario-questions.md#7-how-do-you-manage-database-transactions).
 
@@ -412,23 +465,31 @@ See also [11 Scenarios → Q7](11-scenario-questions.md#7-how-do-you-manage-data
 
 ### 9. Query optimisation
 
-> 🎤 **Interview answer:** "I follow a measure-first approach. First, find the slow queries using the slow query log, `pg_stat_statements`, the MongoDB profiler or APM. Then run EXPLAIN to see whether it's doing a full scan, how many rows it examines, and whether it's sorting in memory. The usual fixes are the right composite index on the WHERE, JOIN and ORDER BY columns, selecting only the needed columns, fixing N+1 queries with joins or `$in`, paginating, preferably with cursors for deep pages, and avoiding functions on indexed columns or leading wildcards that block index use. After that comes caching in Redis, and for bigger problems, summary tables, read replicas or partitioning.
+> 🎤 **Interview answer:** "I always **measure first**, then fix.
+> 1. **Find the slow queries** – slow query log, MongoDB profiler, or APM tools.
+> 2. **Run EXPLAIN** – to see if the DB reads the whole table, how many rows it checks, and if it sorts in memory.
+> 3. **Fix** – usually by:
+>    - adding the right index on the columns used in WHERE, JOIN and ORDER BY,
+>    - returning only the needed columns, not `SELECT *`,
+>    - fixing the N+1 problem (one query per row in a loop),
+>    - adding pagination.
+> 4. **Cache** heavy, frequent reads in Redis.
 >
-> My real example is the user-listing API at Appsinvo: from 4.5 seconds to 550 milliseconds, by adding compound indexes matching the filters and sort, using projection and lean to return only the needed fields, and moving filtering from Node into the query."
+> My real example: a user-listing API went from 4.5 seconds to 550 ms by adding compound indexes for the filters and sort, returning only the needed fields with `.lean()`, and doing the filtering in the DB instead of in Node."
 
-**Step-by-step approach:**
-1. **Find slow queries** – slow query log (MySQL), `pg_stat_statements` (Postgres), MongoDB profiler / Atlas, APM.
-2. **Run EXPLAIN** – `EXPLAIN ANALYZE SELECT ...` (Postgres) / `.explain("executionStats")` (Mongo). Look for full table scan (`Seq Scan`), high rows examined, sorts on disk.
-3. **Add the right index** – on columns in WHERE, JOIN, ORDER BY. Composite index in the right order.
+**Step-by-step checklist:**
+1. **Find slow queries** – slow query log (MySQL), `pg_stat_statements` (Postgres), MongoDB profiler, APM.
+2. **Run EXPLAIN** – `EXPLAIN ANALYZE SELECT ...` (Postgres) / `.explain("executionStats")` (Mongo). Look for full table scans.
+3. **Add the right index** – on columns in WHERE, JOIN, ORDER BY.
 4. **Select only needed columns** – no `SELECT *`; in Mongo use projection and `.lean()`.
-5. **Fix N+1 queries** – one query for a list, then one query per row → use JOIN / `include` / `$in` / populate.
-6. **Paginate** – `LIMIT`; for deep pages use keyset (cursor) pagination.
-7. **Avoid functions on indexed columns** – `WHERE YEAR(created_at) = 2026` can't use the index; use `created_at >= '2026-01-01' AND created_at < '2027-01-01'`.
-8. **Avoid leading wildcard** – `LIKE '%abc'` can't use a normal index (use full-text search).
+5. **Fix N+1 queries** – use JOIN / `include` / `$in` / populate.
+6. **Paginate** – `LIMIT`; for very deep pages use cursor pagination.
+7. **Don't wrap indexed columns in functions** – `WHERE YEAR(created_at) = 2026` can't use the index. Write `created_at >= '2026-01-01' AND created_at < '2027-01-01'` instead.
+8. **Avoid `LIKE '%abc'`** (starting with %) – it can't use a normal index.
 9. **Cache** heavy and frequent reads in Redis.
-10. **Bigger fixes** – denormalise / summary tables, read replicas, partitioning.
+10. **Bigger fixes** – summary tables, read replicas, partitioning.
 
-**My real example:** User-listing API was 4.5 s → 550 ms by adding compound indexes for the filters used, returning only needed fields (smaller payload), and moving filtering into the DB query instead of filtering in Node. Details in [13 Resume → API optimisation](13-resume-questions.md#cut-a-user-listing-api-from-45-s-to-550-ms).
+Details of the 4.5 s → 550 ms story in [13 Resume → API optimisation](13-resume-questions.md#cut-a-user-listing-api-from-45-s-to-550-ms).
 
 ---
 
@@ -436,77 +497,69 @@ See also [11 Scenarios → Q7](11-scenario-questions.md#7-how-do-you-manage-data
 
 ### Q. SQL vs NoSQL – when to use which?
 
-> 🎤 **Interview answer:** "SQL databases like Postgres or MySQL have a fixed schema, strong relationships with joins and foreign keys, and mature ACID transactions. They're best for highly relational, consistency-critical data like orders, payments, inventory or ERP data. NoSQL databases like MongoDB store flexible documents, make it easy to evolve the schema, scale horizontally with sharding, and fit data that's read as a whole, like profiles, catalogues and content. Honestly, both can handle most use cases today, so I choose based on the data shape. That's why I used MongoDB for the matrimony profiles and geo-search, and PostgreSQL with Prisma for the Air India SAP–WMS integration, where the data is strictly relational."
+> 🎤 **Interview answer:** "**SQL** (Postgres, MySQL) has fixed tables, strong relations with joins and foreign keys, and strong transactions. Best for data that is very connected and must be correct, like orders, payments, inventory or ERP data.
+>
+> **NoSQL** (MongoDB) stores flexible JSON-like documents. Easy to change the structure, easy to scale across servers. Good for profiles, catalogues and content.
+>
+> Both can do most jobs today, so I choose by the shape of the data. I used MongoDB for matrimony profiles and location search, and PostgreSQL with Prisma for the Air India SAP–WMS project, where the data is strictly relational."
 
 | SQL (Postgres/MySQL) | NoSQL (MongoDB) |
 |---|---|
-| Fixed schema, tables, relations | Flexible JSON-like documents |
-| Strong joins and transactions | Joins are limited; embed instead |
-| Money, orders, inventory, ERP (like SAP–WMS) | Profiles, catalogs, content, logs, fast-changing fields |
-| Scale mostly vertically + read replicas | Built-in horizontal scaling (sharding) |
-
-Honest answer: both can do most jobs. Choose by data shape and team knowledge.
+| Fixed tables and relations | Flexible JSON-like documents |
+| Strong joins and transactions | Limited joins; embed instead |
+| Money, orders, inventory, ERP | Profiles, catalogues, content, logs |
+| Scale mostly with a bigger server + read copies | Built-in scaling across servers (sharding) |
 
 ### Q. Replica set vs sharding
 
-> 🎤 **Interview answer:** "A replica set is several copies of the same data, usually three nodes: one primary takes writes, and secondaries replicate it. If the primary fails, an election promotes a secondary automatically. So it's about high availability and redundancy, and optionally read scaling. Sharding splits the data across multiple servers based on a shard key, so each shard holds part of the data. It's about horizontal scaling when data or write load is too big for one server. In production, each shard is itself a replica set. Choosing the shard key is critical: it needs high cardinality and even distribution, otherwise one shard becomes a hotspot."
-
-- **Replica set** – copies of the same data on 3+ nodes (1 primary for writes, secondaries for reads/backup). Gives **high availability** – if primary fails, a secondary becomes primary.
-- **Sharding** – data is **split** across servers by a shard key. Gives **horizontal scale** for huge data. Choose a shard key with high cardinality and even distribution.
+> 🎤 **Interview answer:**
+> - "**Replica set** – the **same data copied** on 3 servers. One (primary) takes writes, the others keep copies. If the primary goes down, another one takes over automatically. It's for **safety and uptime**.
+> - **Sharding** – the data is **split** across servers. Each server holds only part of the data, based on a 'shard key'. It's for **very large data** that doesn't fit on one server.
+>
+> The shard key must spread data evenly, otherwise one server gets all the load."
 
 ### Q. What is `.lean()` in Mongoose?
 
-> 🎤 **Interview answer:** "By default Mongoose returns full document objects with change tracking, getters, setters, virtuals and methods like `save`, which is heavy. `.lean()` returns plain JavaScript objects instead, which is much faster and uses less memory, often several times faster for large lists. I use lean on all read-only APIs, like listings. I don't use it when I need to modify and save the document, or when I rely on virtuals or getters."
-
-Returns plain JS objects instead of full Mongoose documents. Much faster and lighter for read-only APIs. You lose getters/setters, virtuals, `.save()`.
+> 🎤 **Interview answer:** "By default, Mongoose returns heavy document objects with extra features like `.save()`. `.lean()` returns plain JavaScript objects instead, which is much faster and uses less memory. I use it on all read-only APIs, like listings. I don't use it when I need to change and save the document."
 
 ### Q. Mongoose middleware (hooks)
 
-> 🎤 **Interview answer:** "Mongoose hooks are functions that run before or after certain operations. The common ones are `pre('save')`, for example to hash a password if it was modified, and `post('save')` to trigger side effects. There are also query hooks like `pre('find')`, which I've used to automatically exclude soft-deleted records. The big gotcha is that `updateOne` and `findOneAndUpdate` don't trigger save hooks, so password hashing in pre-save won't run on those. You need query middleware or to go through `save`."
-
-`pre("save")` to hash password, `post("save")` to send event. Note: `updateOne`/`findOneAndUpdate` do **not** trigger `save` hooks.
+> 🎤 **Interview answer:** "Hooks are functions that run automatically before or after an operation. For example, `pre('save')` to hash the password before saving, or `pre('find')` to skip soft-deleted records. Be careful: `updateOne` and `findOneAndUpdate` do **not** run `save` hooks, so password hashing in `pre('save')` won't run on them."
 
 ### Q. Geo query (matrimony "profiles near me")
 
-> 🎤 **Interview answer:** "In the matrimony project, every profile stores its location as a GeoJSON Point with coordinates in longitude, latitude order, and the collection has a 2dsphere index. For 'matches near me' I use `$near`, or `$geoNear` as the first aggregation stage, with the user's coordinates and a `$maxDistance` in metres, combined with filters like gender, age range and religion, sorted by distance. The common mistake is swapping latitude and longitude. For privacy, we never return exact coordinates, only a rounded distance."
+> 🎤 **Interview answer:** "Each profile stores its location as a point with `[longitude, latitude]`, and the collection has a `2dsphere` index. For 'matches near me', I use `$near` with the user's location and a max distance in metres, plus filters like gender and age. A common mistake is putting latitude first. For privacy, we never return the exact location, only a rounded distance."
 
 ```js
 Profile.find({
   location: {
     $near: {
       $geometry: { type: "Point", coordinates: [lng, lat] },
-      $maxDistance: 50000, // meters
+      $maxDistance: 50000, // metres
     },
   },
   gender: "female",
 }).limit(20);
 ```
-Requires a `2dsphere` index. Coordinates order is **[longitude, latitude]**.
+Needs a `2dsphere` index. Order is **[longitude, latitude]**.
 
 ### Q. What is the `_id` / ObjectId?
 
-> 🎤 **Interview answer:** "ObjectId is MongoDB's default 12-byte primary key. It contains a 4-byte timestamp, a 5-byte random value and a 3-byte counter. So it can be generated on the client without a central counter, it's unique across machines, and it's roughly sortable by creation time. You can even get the creation date from it with `getTimestamp()`. Sorting by `_id` is a common way to do cursor pagination."
-
-12 bytes: timestamp (4) + random (5) + counter (3). So it's roughly sortable by creation time, and you can get creation time from it.
+> 🎤 **Interview answer:** "ObjectId is MongoDB's default id. It is 12 bytes and contains the **creation time**, a random part, and a counter. So it's unique across servers, and roughly sorted by creation time. I can even get the creation date from it with `getTimestamp()`."
 
 ### Q. Capped collections
 
-> 🎤 **Interview answer:** "A capped collection has a fixed size or document count. Once it's full, it automatically overwrites the oldest documents, like a circular buffer, and it keeps insertion order. It's good for logs or recent activity feeds where only the latest data matters. Today, TTL indexes are often more flexible for expiring data by time."
-
-Fixed-size collections that overwrite the oldest documents – good for logs.
+> 🎤 **Interview answer:** "A capped collection has a fixed size. When it is full, the oldest documents are automatically overwritten. Good for logs or 'recent activity' where only the latest data matters."
 
 ### Q. Write concern and read preference
 
-> 🎤 **Interview answer:** "Write concern controls when a write is acknowledged. `w: 1` means the primary has it, and `w: 'majority'` means most replica set members have it, which is safer because it survives a primary failover. I use majority for critical data like orders and payments. Read preference controls where reads go. The default primary always gives the latest data, while `secondary` or `secondaryPreferred` spreads load to replicas, but the data may be slightly stale, so I use it only for reports or analytics."
-
-- Write concern `w: "majority"` – write is confirmed only after most replicas have it (safer).
-- Read preference `secondary` – read from replicas to reduce load on primary (data may be slightly old).
+> 🎤 **Interview answer:**
+> - "**Write concern** – when MongoDB says 'write done'. `w: 'majority'` means most copies have saved it, which is safer. I use it for orders and payments.
+> - **Read preference** – which server to read from. Default is the primary, which has the latest data. Reading from secondaries reduces load, but data may be a little old, so I use it only for reports."
 
 ### Q. Change streams
 
-> 🎤 **Interview answer:** "Change streams let an application subscribe to real-time inserts, updates and deletes on a collection, database or cluster, using the oplog, so they need a replica set. They're resumable with a resume token, so you don't miss events after a restart. Use cases are triggering notifications or events when data changes, syncing data to a search index or cache, and audit trails, without polling the database."
-
-Listen to inserts/updates in a collection in real time (needs a replica set). Useful to trigger events or sync data.
+> 🎤 **Interview answer:** "Change streams let my app **listen** to inserts, updates and deletes in a collection in real time, without checking the DB again and again. Useful for sending notifications when data changes, or syncing data to a cache or search engine. Needs a replica set."
 
 ---
 
@@ -514,11 +567,10 @@ Listen to inserts/updates in a collection in real time (needs a replica set). Us
 
 ### Q. WHERE vs HAVING
 
-> 🎤 **Interview answer:** "`WHERE` filters individual rows before grouping happens, so it can't use aggregate functions. `HAVING` filters groups after `GROUP BY`, so it works with aggregates like `SUM` or `COUNT`. For example, to find customers who spent more than 10,000 on paid orders, `WHERE status = 'paid'` filters the rows first and `HAVING SUM(amount) > 10000` filters the grouped totals. For performance, I filter as much as possible in WHERE, so fewer rows are grouped."
+> 🎤 **Interview answer:** "`WHERE` filters **rows before** grouping. `HAVING` filters **groups after** `GROUP BY`, so it can use `SUM` or `COUNT`. Example: customers who spent more than 10,000 on paid orders. `WHERE status = 'paid'` removes unpaid rows first, then `HAVING SUM(amount) > 10000` keeps only the big spenders."
 
-`WHERE` filters rows **before** grouping. `HAVING` filters **groups after** `GROUP BY`.
 ```sql
-SELECT user_id, SUM(amount) total FROM orders
+SELECT user_id, SUM(amount) AS total FROM orders
 WHERE status = 'paid'
 GROUP BY user_id
 HAVING SUM(amount) > 10000;
@@ -526,90 +578,93 @@ HAVING SUM(amount) > 10000;
 
 ### Q. DELETE vs TRUNCATE vs DROP
 
-> 🎤 **Interview answer:** "`DELETE` removes specific rows with a WHERE clause, row by row. It's logged, can be rolled back and fires triggers, but it's slow on big tables. `TRUNCATE` removes all rows at once, very fast with minimal logging, resets identity counters and doesn't fire row triggers. `DROP` removes the whole table, structure, indexes and data. In production I'm very careful with TRUNCATE and DROP, and I never run them without a backup and a second check."
-
-- `DELETE` – removes chosen rows, can use WHERE, can be rolled back, triggers fire.
-- `TRUNCATE` – removes all rows fast, resets identity; minimal logging.
-- `DROP` – removes the whole table (structure + data).
+> 🎤 **Interview answer:**
+> - "`DELETE` – removes chosen rows with WHERE. Can be undone inside a transaction. Slow on big tables.
+> - `TRUNCATE` – removes **all** rows at once. Very fast. Resets the id counter.
+> - `DROP` – removes the **whole table**: structure, indexes and data.
+>
+> In production I never run TRUNCATE or DROP without a backup."
 
 ### Q. UNION vs UNION ALL
 
-> 🎤 **Interview answer:** "Both combine the results of two queries with the same columns. `UNION` removes duplicate rows, which requires a sort or hash step, so it's slower. `UNION ALL` just appends all rows, including duplicates, so it's faster. I use UNION ALL by default when I know there are no duplicates, or when duplicates are fine."
-
-`UNION` removes duplicates (slower). `UNION ALL` keeps all rows (faster).
+> 🎤 **Interview answer:** "Both join the results of two queries. `UNION` removes duplicate rows, so it's slower. `UNION ALL` keeps all rows, so it's faster. I use `UNION ALL` when duplicates are not a problem."
 
 ### Q. Normalisation (simple)
 
-> 🎤 **Interview answer:** "Normalisation is organising tables to remove duplicate data and avoid update anomalies. 1NF means each column holds a single atomic value, with no repeating groups. 2NF means every non-key column depends on the whole primary key, not part of a composite key. 3NF means non-key columns depend only on the key, not on other non-key columns. For example, the customer's city shouldn't be stored in the orders table. In practice I normalise transactional data to 3NF, and denormalise on purpose for read-heavy reports or snapshots, like copying the price into order items."
-
-Organising tables to avoid duplicate data.
-- **1NF** – each cell has a single value, no repeating groups.
-- **2NF** – 1NF + every non-key column depends on the whole primary key.
-- **3NF** – 2NF + non-key columns don't depend on other non-key columns.
-**Denormalisation** – adding some duplicate data on purpose to make reads faster (reports).
+> 🎤 **Interview answer:** "Normalisation means organising tables so the same data is **not stored in many places**. Then when something changes, we update it in only one place.
+> - **1NF** – each cell has one value only (no lists inside a cell).
+> - **2NF** – every column depends on the whole primary key.
+> - **3NF** – columns depend only on the key, not on other columns. Example: don't store the customer's city in the orders table; it belongs in the customers table.
+>
+> **Denormalisation** is the opposite: copying some data on purpose to make reads faster, like saving the price inside the order item."
 
 ### Q. Clustered vs non-clustered index
 
-> 🎤 **Interview answer:** "A clustered index defines the physical order in which rows are stored, so there can be only one per table. In MySQL InnoDB the primary key is the clustered index. A non-clustered, or secondary, index is a separate structure that stores the indexed values with a pointer to the row, or the primary key in InnoDB, and a table can have many. Lookups via a secondary index need an extra step to fetch the row, unless the index covers all the needed columns."
-
-- Clustered – table rows are physically stored in index order (one per table; InnoDB primary key).
-- Non-clustered – separate structure pointing to rows (many per table).
+> 🎤 **Interview answer:**
+> - "**Clustered index** – the table rows are actually stored in this order. Only one per table. In MySQL, the primary key is the clustered index.
+> - **Non-clustered index** – a separate list that points to the rows. A table can have many."
 
 ### Q. What are views, stored procedures, triggers?
 
-> 🎤 **Interview answer:** "A view is a saved SELECT query that you can query like a table. It's good for simplifying complex joins or limiting which columns users see. A stored procedure is a precompiled program stored in the database that can contain logic, loops and transactions, and is called by name. A trigger is code that runs automatically on INSERT, UPDATE or DELETE, like writing an audit log. I mostly keep business logic in the application layer for testability and version control, and use views or triggers for things like reporting or auditing."
-
-- **View** – a saved query used like a table.
-- **Stored procedure** – saved SQL program run on the DB server.
-- **Trigger** – SQL that runs automatically on INSERT/UPDATE/DELETE.
+> 🎤 **Interview answer:**
+> - "**View** – a saved SELECT query that we can use like a table.
+> - **Stored procedure** – a saved SQL program inside the database, called by name.
+> - **Trigger** – SQL that runs automatically on INSERT, UPDATE or DELETE, like writing an audit log.
+>
+> I keep most business logic in the app code, because it's easier to test and track in Git."
 
 ### Q. Window functions
 
-> 🎤 **Interview answer:** "Window functions calculate across a set of related rows without collapsing them like GROUP BY does, so every row keeps its own data plus the calculated value. The `OVER` clause defines the window, with `PARTITION BY` for groups and `ORDER BY` for order. Common uses are ranking within a group, like top earners per department, running totals, and comparing with previous rows using LAG and LEAD. For ranking, ROW_NUMBER gives unique numbers, RANK leaves gaps after ties, and DENSE_RANK doesn't leave gaps. That's why DENSE_RANK is the right choice for 'Nth highest salary'."
+> 🎤 **Interview answer:** "Window functions do calculations across related rows, but **without merging them into one row** like `GROUP BY` does. Each row keeps its data and gets an extra calculated value. `PARTITION BY` makes groups and `ORDER BY` sets the order inside each group. Common uses: rank inside a group (top salary per department), running totals.
+> - `ROW_NUMBER` → 1, 2, 3, 4
+> - `RANK` → 1, 2, 2, 4 (skips after a tie)
+> - `DENSE_RANK` → 1, 2, 2, 3 (no skip) – best for 'Nth highest salary'."
 
-Calculate across rows without collapsing them like GROUP BY.
 ```sql
 SELECT name, department, salary,
        RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS rnk
 FROM employees;
 ```
-`ROW_NUMBER` (1,2,3,4), `RANK` (1,2,2,4), `DENSE_RANK` (1,2,2,3).
 
 ### Q. Connection pooling
 
-> 🎤 **Interview answer:** "Opening a new database connection for every request is slow, because of the TCP and auth handshake, and the database has a connection limit. A pool keeps a set of open connections and lends them to requests, returning them after use. I size the pool based on the database's `max_connections` divided by the number of app instances. With PM2 cluster or many containers, each process has its own pool, so it adds up fast. In serverless environments like Lambda, many concurrent functions can exhaust connections, so we use RDS Proxy."
-
-Opening a DB connection is slow. A pool keeps N connections open and reuses them. Set pool size based on DB limits (e.g. Postgres `max_connections`). In serverless (Lambda), use RDS Proxy to avoid too many connections.
+> 🎤 **Interview answer:** "Opening a new DB connection for every request is slow, and the DB allows only a limited number of connections. A **pool** keeps some connections open and reuses them. A request borrows a connection and gives it back after use. I set the pool size based on the DB limit divided by the number of app copies. In AWS Lambda, many functions can open too many connections, so we use RDS Proxy."
 
 ### Q. N+1 problem
 
-> 🎤 **Interview answer:** "The N+1 problem is when the code runs one query to fetch a list and then one more query for each item. For example, fetch 100 users, then query orders for each user in a loop, which is 101 queries. It works in development but becomes very slow with real data. The fix is fetching the related data in one go: a JOIN or Prisma `include`, or one query with `WHERE user_id IN (...)` and grouping the results in code. In Mongoose, `populate` does the `$in` batching for us. I spot it by logging the queries per request."
+> 🎤 **Interview answer:** "N+1 is when the code runs **one query to get a list**, and then **one more query for each item**. For example, get 100 users, then get orders for each user in a loop = 101 queries. Fine with test data, very slow with real data. The fix: get all related data in one go, with a JOIN, Prisma `include`, or one query with `WHERE user_id IN (...)`."
 
 ```js
-const users = await User.findAll();             // 1 query
-for (const u of users) u.orders = await Order.findAll({ where: { userId: u.id } }); // N queries
+// Bad – 1 + N queries
+const users = await User.findAll();
+for (const u of users) {
+  u.orders = await Order.findAll({ where: { userId: u.id } });
+}
+
+// Good – 2 queries total
+const users = await User.findAll();
+const ids = users.map(u => u.id);
+const orders = await Order.findAll({ where: { userId: ids } }); // WHERE user_id IN (...)
 ```
-Fix: one JOIN or `include`, or one query with `WHERE user_id IN (...)`.
 
 ### Q. Postgres JSONB
 
-> 🎤 **Interview answer:** "JSONB is Postgres's binary JSON column type. It stores JSON in a parsed format that supports operators for querying inside the document and can be indexed with GIN indexes. It's useful when a mostly relational schema needs some flexible fields, like product attributes, metadata or raw payloads from external systems, for example storing the raw SAP payload for debugging alongside the structured columns. I don't overuse it for core relational data, since you lose constraints and clear types."
-
-Postgres can store JSON (`JSONB`) and index it (GIN index). Good for flexible fields inside a relational DB.
+> 🎤 **Interview answer:** "JSONB is a Postgres column type that stores JSON, and we can search inside it and index it. It's useful when a mostly relational table needs a few flexible fields, like product attributes or the raw data received from SAP for debugging. I don't use it for core data, because we lose the strict rules of normal columns."
 
 ### Must-practise SQL queries
 
-> 🎤 **Interview answer:** "For these I explain my approach before I write. For 'Nth highest', I use DENSE_RANK in a subquery, which handles ties correctly. For 'top per group', I use RANK with PARTITION BY. For duplicates, GROUP BY with HAVING COUNT greater than 1. For 'never ordered', LEFT JOIN with IS NULL, or NOT EXISTS. I also mention edge cases like ties, NULLs and empty groups, and which columns should be indexed."
+> 🎤 **Interview answer:** "For these I first explain my approach, then write. For 'Nth highest' I use `DENSE_RANK`, which handles ties. For 'top per group' I use `RANK` with `PARTITION BY`. For duplicates, `GROUP BY` with `HAVING COUNT(*) > 1`. For 'never ordered', `LEFT JOIN` with `IS NULL`, or `NOT EXISTS`."
 
 ```sql
 -- 1. Second highest salary
-SELECT MAX(salary) FROM employees WHERE salary < (SELECT MAX(salary) FROM employees);
+SELECT MAX(salary) FROM employees
+WHERE salary < (SELECT MAX(salary) FROM employees);
 
 -- 2. Nth highest salary (N = 3)
 SELECT DISTINCT salary FROM employees ORDER BY salary DESC LIMIT 1 OFFSET 2;
 -- or
 SELECT salary FROM (
-  SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) r FROM employees
+  SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) AS r FROM employees
 ) t WHERE r = 3 LIMIT 1;
 
 -- 3. Highest salary in each department
@@ -617,7 +672,7 @@ SELECT department, MAX(salary) FROM employees GROUP BY department;
 
 -- 4. Employee(s) with highest salary per department (full row)
 SELECT * FROM (
-  SELECT e.*, RANK() OVER (PARTITION BY department ORDER BY salary DESC) r FROM employees e
+  SELECT e.*, RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS r FROM employees e
 ) t WHERE r = 1;
 
 -- 5. Find duplicate emails
@@ -659,25 +714,24 @@ GROUP BY d.name;
 
 **Q. What is an ORM? Pros and cons?**
 
-> 🎤 **Interview answer:** "An ORM maps database tables or collections to classes and objects, so we work with code instead of writing raw SQL everywhere. The benefits are faster development, type safety, especially with Prisma, built-in migrations, and protection from SQL injection through parameterised queries. The downsides are that it can hide inefficient queries like N+1, complex queries can be awkward or slow, and it adds abstraction. So I use the ORM for regular CRUD and switch to raw SQL or the query builder for complex reports. I've used Prisma at Air India, TypeORM at KindSwap and Mongoose in my MongoDB projects."
-
-Maps tables/collections to classes/objects so you write code instead of raw SQL.
-Pros: faster development, type safety (Prisma), migrations, protection from SQL injection.
-Cons: can create slow queries (N+1), harder for complex queries → use raw SQL for those.
+> 🎤 **Interview answer:** "An ORM lets us work with the database using normal code and objects, instead of writing raw SQL everywhere. For example, `prisma.user.findMany()` instead of `SELECT * FROM users`.
+>
+> **Pros:** faster to write, type safety (especially Prisma), built-in migrations, and protection from SQL injection.
+> **Cons:** it can hide slow queries like N+1, and complex queries can be hard.
+>
+> So I use the ORM for normal CRUD, and raw SQL for complex reports. I've used Prisma at Air India, TypeORM at KindSwap, and Mongoose in my MongoDB projects."
 
 | | Prisma | TypeORM | Mongoose |
 |---|---|---|---|
 | DB | SQL (+ Mongo) | SQL | MongoDB |
 | Schema | `schema.prisma` file | Decorators on classes (`@Entity`) | `new Schema({...})` |
 | Types | Auto-generated, very strong | From classes | Need extra typing |
-| Migrations | `prisma migrate` | Built-in | Not needed (schemaless) |
+| Migrations | `prisma migrate` | Built-in | Not needed |
 | Used by me at | Air India (Notus) | KindSwap (Revinfotech) | Appsinvo, matrimony, Byte Digital |
 
 **Q. What is a migration?**
 
-> 🎤 **Interview answer:** "A migration is a versioned script that changes the database schema, like creating a table, adding a column or adding an index. Migrations are committed to Git and run in the same order on every environment, so dev, staging and production schemas always match, and there's a history of changes. With Prisma I use `prisma migrate dev` locally and `prisma migrate deploy` in CI. For big tables I keep migrations backward-compatible, for example add a nullable column, backfill, then make it required, so deploys don't break running code."
-
-A versioned script that changes the DB structure (add column, add index). Stored in git, run in the same order on every environment so all DBs match.
+> 🎤 **Interview answer:** "A migration is a script that changes the database structure, like adding a table, a column or an index. Migrations are saved in Git and run in the same order on every environment, so dev, staging and production databases always match. With Prisma I use `prisma migrate dev` locally and `prisma migrate deploy` on the server. For big tables, I make changes in safe steps: first add the new column as optional, fill the data, then make it required."
 
 ---
 

@@ -22,15 +22,21 @@ At 4–5 years you won't usually get a full "design Twitter" round, but you will
 
 ## How to answer a design question
 
-> 🎤 **Interview answer:** "When I get a design question, I don't jump straight to the diagram. I start by clarifying requirements: who the users are, the expected scale in users and requests per second, whether it's read-heavy or write-heavy, and what must never fail, like payments. Then I list 3 or 4 core features, draw the high-level flow, client to load balancer to stateless API servers to cache and database, with a queue and workers for async work, then define the main data model with indexes and the key APIs. Finally I talk about scaling and failure handling: caching, replicas, retries, idempotency, monitoring. I explain the trade-offs of each choice as I go. Wherever possible I connect it to systems I've actually built."
+> 🎤 **Interview answer:** "I don't jump straight to drawing. I follow simple steps:
+> 1. **Ask questions** – who uses it, how many users, is it more reads or more writes, and what must never fail (like payments).
+> 2. **Pick 3–4 main features.**
+> 3. **Draw the basic flow** – app → load balancer → API servers → cache → database, plus a queue and workers for background work.
+> 4. **Design the data** – main tables and indexes.
+> 5. **Design the main APIs.**
+> 6. **Talk about scale and failures** – caching, more servers, retries, duplicates, monitoring.
+>
+> At each step I say why I chose something and what the downside is. And I connect it to systems I've actually built."
 
-1. **Ask questions (2 min):** Who uses it? How many users / requests per second? Read-heavy or write-heavy? What must never fail?
-2. **List the main features** (keep 3–4).
-3. **Draw the high-level flow:** Client → Load balancer → API servers → Cache → DB, + queue + workers.
-4. **Design the data** – main tables/collections and indexes.
-5. **Design the main APIs** – 3–4 endpoints.
-6. **Handle scale and failure** – caching, queue, replicas, retries, idempotency.
-7. **Mention trade-offs** – "I chose X because…, the downside is…".
+```
+Client → Load balancer → API servers (many, stateless) → Redis cache → Database
+                                   ↓
+                                 Queue → Workers (emails, invoices, etc.)
+```
 
 ---
 
@@ -38,216 +44,237 @@ At 4–5 years you won't usually get a full "design Twitter" round, but you will
 
 **Vertical vs horizontal scaling**
 
-> 🎤 **Interview answer:** "Vertical scaling means giving one machine more CPU and RAM. It's simple and needs no code changes, but there's a hardware limit and it stays a single point of failure. Horizontal scaling means adding more machines behind a load balancer. It scales much further and gives redundancy, but it requires stateless application servers: sessions in Redis or JWT, files in S3, shared state like rate-limit counters in Redis. In practice I scale the app tier horizontally, with PM2 cluster plus multiple instances, and scale the database vertically first, then with read replicas."
+> 🎤 **Interview answer:**
+> - "**Vertical scaling** = make one server bigger (more CPU and RAM). Simple, no code change. But there's a limit, and if that one server dies, everything is down.
+> - **Horizontal scaling** = add **more servers** behind a load balancer. Can grow much more, and if one dies, others keep working. But the servers must be **stateless**: no user data saved in a server's memory.
+>
+> In practice, I scale the app by adding servers, and scale the database by making it bigger first, then adding read copies."
 
-- Vertical – bigger machine (more CPU/RAM). Simple, has a limit, single point of failure.
-- Horizontal – more machines behind a load balancer. Needs **stateless** servers (sessions in Redis / JWT, files in S3).
+**Stateless servers**
 
-**Stateless servers** – no user data kept in server memory between requests, so any server can handle any request.
+> 🎤 **Interview answer:** "A stateless server **doesn't remember anything about a user** between requests. Everything needed comes with the request (like the JWT), or is stored in a shared place (Redis, DB, S3). So **any server can handle any request**. We can add or remove servers freely, and if one crashes, users don't lose anything. Keeping sessions or uploaded files on one server's disk breaks this."
 
-> 🎤 **Interview answer:** "A stateless server doesn't keep any user-specific data in its memory between requests. Everything needed comes with the request, like the JWT, or lives in shared stores like Redis, the database or S3. Then any instance can handle any request, so we can add or remove instances freely, deploy without losing sessions, and survive instance crashes. Things like in-memory sessions, local file uploads or in-process caches of user state break this, so I avoid them."
-
-**Load balancer** – spreads traffic, health checks (AWS ALB, Nginx).
+**Load balancer** – spreads traffic across servers and checks their health (AWS ALB, Nginx).
 
 **Caching layers** – browser → CDN → app memory → Redis → DB.
 
 **Database scaling**
-- Indexes and query fixes first.
-- **Read replicas** – send reads to replicas, writes to primary (replica lag: data may be a few ms/sec old).
-- **Sharding / partitioning** – split data across DBs by a key (userId).
-- **Connection pooling**.
+- Fix indexes and slow queries first.
+- **Read replicas** – copies of the DB used only for reading. Writes go to the main DB. (Copies may be a few ms/seconds behind.)
+- **Sharding** – split data across many DBs by a key (like userId).
+- **Connection pooling.**
 
-**CAP theorem (simple):** in a distributed system during a network split you must choose **Consistency** (everyone sees the same latest data, may reject requests) or **Availability** (always respond, data may be old). Payments → consistency; feeds/likes → availability.
+**CAP theorem (simple):**
 
-> 🎤 **Interview answer:** "CAP says that in a distributed system, when a network partition happens, you have to choose between consistency, where every read sees the latest write, possibly by rejecting requests, and availability, where every request gets a response, possibly with stale data. Partitions can't be avoided, so the real choice is C or A during a failure. I pick based on the business: for payments, wallet balances and stock, I prefer consistency, because a wrong answer costs money. For feeds, likes, view counts or profile searches, availability with eventual consistency is fine."
+> 🎤 **Interview answer:** "CAP says: when the network between servers breaks, a system must choose between:
+> - **Consistency** – everyone sees the latest correct data, even if that means saying 'try again later'.
+> - **Availability** – always give an answer, even if the data might be a bit old.
+>
+> I choose based on the business. For payments, wallet and stock → **consistency**, because a wrong answer costs money. For feeds, likes and view counts → **availability** is fine; slightly old data is OK."
 
-**Consistency types:** strong (read sees latest write) vs eventual (will be correct after a short time – e.g. read replicas, caches, events).
+**Consistency types:**
 
-> 🎤 **Interview answer:** "Strong consistency means a read always returns the latest committed write, like reading from the primary database. Eventual consistency means replicas, caches or downstream services may be stale for a short time but converge to the right value. Read replicas, Redis caches and event-driven updates through Kafka are all eventually consistent. So in designs I state which reads must be strongly consistent, like checking payment status, and route them to the primary, and which can tolerate slight staleness."
+> 🎤 **Interview answer:**
+> - "**Strong consistency** – a read always gets the latest data. Like reading from the main database.
+> - **Eventual consistency** – the data may be old for a short time, but becomes correct soon. Read copies, caches and Kafka events work like this.
+>
+> In a design, I say clearly which reads must be fresh, like payment status, and send those to the main DB."
 
-**Latency vs throughput:** latency = time for one request; throughput = requests handled per second.
+**Latency vs throughput:** latency = time for **one** request. Throughput = **how many** requests per second.
 
-**Single point of failure (SPOF):** any component that, if it fails, takes the whole system down. Remove with replicas, multiple instances, multi-AZ.
+**Single point of failure (SPOF):** any part that, if it fails, takes the whole system down. Fix: more copies, more servers, multiple data centres.
 
-**Observability:** logs (what happened), metrics (how much / how fast – CloudWatch), traces (path of one request across services – request id / OpenTelemetry), alerts.
+**Observability:**
 
-> 🎤 **Interview answer:** "Observability has three pillars. Logs tell me what happened: structured JSON logs with a request id. Metrics tell me how much and how fast: latency percentiles, error rates, CPU, consumer lag, in CloudWatch. Traces show the path of one request across services, using a correlation id or OpenTelemetry. On top of these, alerts tell us about problems before users do. At KindSwap, for example, we monitored the leader-election service in CloudWatch with alarms for no leader or error spikes."
+> 🎤 **Interview answer:** "Observability means being able to see what's happening inside the system. Three parts:
+> - **Logs** – what happened. JSON logs with a request id.
+> - **Metrics** – numbers: how fast, how many errors, CPU, consumer lag. In CloudWatch.
+> - **Traces** – the path of **one** request across many services, using a request id.
+>
+> Plus **alerts**, so we find problems before users do. At KindSwap we watched the leader-election service in CloudWatch, with alerts for 'no leader' and error spikes."
 
 ---
 
 ## Monolith vs microservices
 
-> 🎤 **Interview answer:** "A monolith is one codebase and one deployment. It's simpler to build, test, debug and deploy, transactions are easy with one database, and it's the right choice for small teams and early products. Microservices split the system into independently deployable services, each owning its data. Teams can deploy and scale independently, and failures can be isolated. But you pay with distributed complexity: network calls that fail, eventual consistency, distributed transactions that need sagas, and more monitoring and DevOps work.
+> 🎤 **Interview answer:** "A **monolith** is one codebase, deployed as one app. Simple to build, test and deploy, and transactions are easy with one database. Right for small teams and new products.
 >
-> My honest view is to start with a well-structured modular monolith and extract a service when a part has a clearly different scaling need, team or release cycle. At KindSwap, Referral and Staking were separate NestJS services because they had their own domain logic, payout workflows and release cycles, and they communicated with events over Redis pub/sub."
+> **Microservices** split the system into **many small apps**, each with its own database, each deployed separately. Teams can work and deploy independently, and scale only the busy part. But it's much more complex: network calls can fail, data is only 'eventually' in sync, and you need more monitoring and DevOps.
+>
+> My honest view: start with a **well-organised monolith**, and split out a service only when one part clearly needs it, like a different scaling need or a separate team. At KindSwap, Referral and Staking were separate NestJS services because they had their own logic, payout flows and release cycles, and they talked through events on Redis pub/sub."
 
 | Monolith | Microservices |
 |---|---|
 | One codebase, one deploy | Many small services, each deployed separately |
-| Simple to build, test, debug | Each team/service can scale and deploy independently |
-| One DB, easy transactions | Each service owns its DB → distributed transactions are hard |
+| Simple to build, test, debug | Each service can scale and deploy on its own |
+| One DB, easy transactions | Each service has its own DB → cross-service transactions are hard |
 | Whole app scales together | Scale only the busy service |
-| One bug can crash everything | Failure can be isolated (with timeouts/circuit breakers) |
-| Good for small teams, early products | Good for large teams, clear domains |
-
-**Honest answer:** start with a well-structured monolith (modules), split into services when a part has a different scaling need or team. At KindSwap, Referral and Staking were separate services because they had separate logic, payouts and release cycles.
+| One bug can crash everything | A failure can stay inside one service |
+| Good for small teams, new products | Good for big teams |
 
 **How services talk:**
 
-> 🎤 **Interview answer:** "There are two styles. Synchronous calls, REST or gRPC, are simple and give an immediate answer, but the caller waits and fails if the callee is down, so you need timeouts, retries and circuit breakers. Asynchronous messaging with Kafka, RabbitMQ or Redis events decouples services in time: the producer doesn't wait or even know the consumers, but the result is eventually consistent. I use sync when the caller needs the answer right now, like validating a user, and async for side effects and cross-service workflows, like notifications or crediting referral rewards."
-
-- **Sync** – REST/gRPC (simple, but caller waits and fails if callee is down).
-- **Async** – Kafka/RabbitMQ/Redis events (decoupled, eventual consistency).
+> 🎤 **Interview answer:**
+> - "**Sync (REST / gRPC)** – service A calls B and **waits** for the answer. Simple, but if B is down, A fails too. So I add timeouts, retries and a circuit breaker.
+> - **Async (Kafka / RabbitMQ / Redis events)** – A sends a message and **doesn't wait**. B handles it later. Services don't depend on each other, but the result comes a bit later.
+>
+> I use sync when I need the answer right now, like checking a user. I use async for background work, like notifications or giving referral rewards."
 
 ---
 
 ## Patterns to know
 
-**Saga pattern** – a transaction across services done as a series of local steps; if a step fails, run **compensating** actions. Example: create order → reserve stock → take payment. Payment fails → release stock → cancel order.
+**Saga pattern**
 
-> 🎤 **Interview answer:** "A saga handles a business transaction that spans multiple services, where we can't use one database transaction. It's broken into a sequence of local transactions, each in its own service, and if a step fails, compensating actions undo the previous steps. For example: create order, reserve stock, take payment. If payment fails, we release the stock and cancel the order. It can be choreographed, where services react to each other's events, or orchestrated, where a central coordinator tells each service what to do. Every step and compensation must be idempotent, since messages can be redelivered."
+> 🎤 **Interview answer:** "A saga is used when one business action needs **many services**, so we can't use one database transaction. Each service does its own step. If a later step fails, we run **undo steps** for the earlier ones.
+>
+> Example: create order → reserve stock → take payment. If payment fails → release the stock → cancel the order.
+>
+> Every step and every undo step must be safe to run twice, because messages can repeat."
 
-**Circuit breaker** – if a downstream service keeps failing, stop calling it for some time and return a fallback quickly (library: `opossum`). States: closed (normal) → open (fail fast) → half-open (test a few calls).
+**Circuit breaker**
 
-> 🎤 **Interview answer:** "A circuit breaker protects us from a failing dependency. Normally it's closed and calls go through. If failures or timeouts cross a threshold, it opens, and for a cool-down period calls fail immediately or return a fallback, instead of piling up and exhausting our connections. After that it goes half-open and lets a few test calls through. If they succeed it closes again, otherwise it reopens. In Node, the `opossum` library implements this. I'd use it around third-party calls like SMS providers or payment status APIs."
+> 🎤 **Interview answer:** "A circuit breaker protects us from a service that keeps failing. It works like an electric fuse:
+> - **Closed** (normal) – calls go through.
+> - If too many calls fail, it **opens** – for some time, we stop calling that service and return a fallback answer immediately. So requests don't pile up waiting.
+> - After a while, it goes **half-open** – lets a few test calls through. If they work, it closes again. If not, it opens again.
+>
+> In Node, the `opossum` library does this. I'd use it around third-party calls like the SMS provider or payment status API."
 
-**Retry with exponential backoff + jitter** – retry failed calls after 1 s, 2 s, 4 s (+ random) – only for safe/idempotent operations.
+**Retry with exponential backoff + jitter**
 
-> 🎤 **Interview answer:** "For transient failures, I retry with exponentially increasing delays, like 1, 2 and 4 seconds, plus random jitter so thousands of clients don't retry at exactly the same moment and overwhelm the recovering service. I cap the number of retries, only retry errors that can recover, like timeouts, 5xx or 429, never 400s, and only retry operations that are idempotent or protected by an idempotency key. After the final failure, the work goes to a DLQ or gets marked failed for follow-up."
+> 🎤 **Interview answer:** "When a call fails for a temporary reason, I retry it, waiting longer each time: 1 s, 2 s, 4 s. I also add a small **random** extra wait (jitter), so thousands of clients don't all retry at the exact same moment. I limit the number of retries, only retry temporary errors (timeouts, 5xx, 429), never 400s, and only retry actions that are safe to repeat. After the last failure, the job goes to a DLQ."
 
 **Idempotency** – see [07 → Idempotency](07-apis-backend.md#q-what-is-idempotency-and-how-do-you-implement-it).
 
 **Outbox pattern** – see [09 → Outbox](09-kafka-redis-messaging.md#outbox-pattern).
 
-**CQRS (simple)** – separate models for writes and reads (e.g. write to Postgres, read from a denormalised view/Elasticsearch).
+**CQRS (simple)**
 
-> 🎤 **Interview answer:** "CQRS, Command Query Responsibility Segregation, means using separate models for writes and reads. Writes go to a normalised transactional store, and reads are served from a model optimised for queries, like a denormalised table, a cache or Elasticsearch, kept in sync through events. It helps when reads and writes have very different shapes or loads, like complex dashboards over transactional data. The cost is extra complexity and eventual consistency, so I'd only use it where it clearly pays off."
+> 🎤 **Interview answer:** "CQRS means using **one model for writing and a different model for reading**. Writes go to the normal database. Reads come from a copy designed for fast reading, like a summary table, a cache or Elasticsearch, kept updated through events. It's useful when reads are very different from writes, like heavy dashboards. But it adds complexity, so I'd use it only when clearly needed."
 
-**Bulkhead** – separate pools/resources so one slow dependency doesn't use all connections.
+**Bulkhead**
 
-> 🎤 **Interview answer:** "The bulkhead pattern, named after ship compartments, isolates resources so one failing part can't sink everything. For example, separate connection pools or worker queues per dependency, so if the SMS provider becomes slow, it can only use up its own pool, and payments and other APIs keep working."
+> 🎤 **Interview answer:** "Bulkhead means **keeping resources separate**, like the separate compartments in a ship, so one leak doesn't sink everything. For example, a separate connection pool for the SMS provider. If SMS becomes slow, it can only use up its own pool, and payments and other APIs keep working."
 
-**API Gateway / BFF** – one entry point; Backend-for-Frontend for different clients.
+**API Gateway / BFF**
 
-> 🎤 **Interview answer:** "An API gateway is the single entry point that handles routing, auth, rate limiting and logging for all services. A backend-for-frontend is a variation where each client type, like web, mobile or admin, gets its own thin backend layer that aggregates and shapes data exactly for that client, so the core services stay generic."
+> 🎤 **Interview answer:** "An API gateway is one front door for all services: routing, auth, rate limiting, logging. A **BFF (Backend-for-Frontend)** is a small backend made for one client type, like mobile or admin, that collects and shapes data exactly for that client."
 
-**Event sourcing (basic)** – store every change as an event and rebuild state from events.
+**Event sourcing (basic)**
 
-> 🎤 **Interview answer:** "With event sourcing, instead of storing only the current state, we store every change as an immutable event, like deposited 500 or withdrew 200, and rebuild the current state by replaying the events. It gives a complete audit trail and the ability to rebuild read models, which is valuable for financial ledgers. The downsides are complexity, event schema versioning, and the need for snapshots to keep the rebuild fast."
+> 🎤 **Interview answer:** "With event sourcing, instead of saving only the current value, we save **every change** as an event, like 'deposited 500', 'withdrew 200'. The current balance is calculated by replaying all events. It gives a full history, which is great for money ledgers. But it's complex to build."
 
 ---
 
 ## Design a URL shortener
 
-> 🎤 **Interview answer:** "First I'd clarify the scale, but it's clearly very read-heavy: one write and many redirects. There are two APIs: POST `/shorten`, which returns a short code, and GET `/:code`, which redirects. For code generation, I'd take an auto-increment id, or a distributed id generator, and Base62-encode it. Seven characters give around 3.5 trillion combinations with no collisions. A random code with a uniqueness check also works. The table is code as the primary key, plus long URL, user, created and expiry dates.
+> 🎤 **Interview answer:** "It's very **read-heavy**: a link is created once but opened many times.
 >
-> Since it's read-heavy, redirects hit Redis first, with the database as a fallback, and a CDN for very hot links. For analytics, I wouldn't write to the database on every click. I'd push click events to a queue and aggregate them asynchronously. On redirect type: 301 is permanent and cached by browsers, which means less load but lost analytics, while 302 sends every click through us, so if analytics matters I choose 302."
-
-- **APIs:** `POST /shorten { url }` → `{ code }`; `GET /:code` → 301/302 redirect.
-- **Code generation:** auto-increment id → Base62 encode (`a-zA-Z0-9`, 7 chars ≈ 3.5 trillion), or random + check for collision.
-- **DB:** `urls(code PK, long_url, user_id, created_at, expires_at)`.
-- **Read-heavy** → cache `code → url` in Redis; CDN for hot links.
-- **Analytics:** send click events to a queue instead of writing to DB on every redirect.
-- 301 (permanent, browser caches – fewer hits, less analytics) vs 302 (temporary – every click reaches you).
+> **APIs:**
+> - `POST /shorten` – takes a long URL, returns a short code.
+> - `GET /:code` – redirects to the long URL.
+>
+> **Making the code:** take an auto-increment id and convert it to Base62 (a–z, A–Z, 0–9). 7 characters give about 3.5 trillion codes, with no clashes. A random code with a 'does it exist?' check also works.
+>
+> **Database:** a table with code (primary key), long URL, user, created date and expiry.
+>
+> **Speed:** since it's read-heavy, I check Redis first for the code, then the DB. Very popular links can be served by a CDN.
+>
+> **Click counts:** I don't write to the DB on every click. I send click events to a queue and count them in the background.
+>
+> **301 vs 302:** 301 is permanent and the browser caches it, so less load but we lose click tracking. 302 sends every click through us. If tracking matters, I use 302."
 
 ---
 
 ## Design a notification system
 
-> 🎤 **Interview answer:** "This is close to what I built with Kafka at Appsinvo. Business services don't send notifications themselves. They publish events like `order.placed` or `payment.success`. A notification service consumes those, looks up the user's preferences, like channels and quiet hours, and the template, and pushes jobs onto channel-specific queues for email, SMS and push. That way a slow SMS provider doesn't delay emails. Channel workers call the providers, like SES, the SMS gateway or FCM, with retries, backoff and a dead-letter queue.
->
-> Every notification is stored with a status, pending, sent or failed, for tracking, and de-duplicated by eventId so users never get the same message twice. I'd also rate-limit per user and send large campaigns in batches, so we don't hit provider limits."
+> 🎤 **Interview answer:** "This is close to what I built with Kafka at Appsinvo.
+> 1. Business services **don't send notifications themselves**. They just send events like `order.placed` or `payment.success`.
+> 2. A **notification service** reads these events, checks the user's settings (email / SMS / push, quiet hours) and picks the template.
+> 3. It puts jobs into **separate queues per channel**: email, SMS, push. So a slow SMS provider doesn't delay emails.
+> 4. Workers for each channel call the providers (SES, SMS gateway, FCM), with **retries and a dead-letter queue**.
+> 5. Every notification is saved with a status (pending / sent / failed), and checked by `eventId` so nobody gets the same message twice.
+> 6. I limit how many messages one user can get, and send big campaigns in batches."
 
-(Close to what you built with Kafka.)
-1. Services publish events: `order.placed`, `payment.success`.
-2. **Notification service** consumes, looks up user preferences (email/SMS/push, quiet hours) and templates.
-3. Pushes jobs to channel-specific queues: email, SMS, push.
-4. Channel workers call providers (SES/SendGrid, SMS gateway, FCM) with **retries + DLQ**.
-5. Store notification status (`pending/sent/failed`) for tracking and dedupe with `eventId`.
-6. Rate-limit per user (don't send 50 SMS), batch large campaigns ([02 → chunk](02-javascript-coding.md#q11-chunk-an-array)).
+Batch sending: see [02 → chunk](02-javascript-coding.md#q11-chunk-an-array).
 
 ---
 
 ## Design a rate limiter
 
-> 🎤 **Interview answer:** "I'd put coarse limits at the edge, in Nginx or the API gateway, and fine-grained limits in application middleware. The key depends on the use case: IP for anonymous routes, userId or API key for authenticated ones, and often per route, with much stricter limits on login and OTP. For the algorithm I'd pick a token bucket, which allows short bursts, or a sliding window for accuracy. The state lives in Redis, so all instances share counters, using atomic INCR or a Lua script. When the limit is hit, we return 429 with a Retry-After header and rate-limit headers. One design decision to state clearly: if Redis is down, do we fail open and allow requests, keeping the site up, or fail closed? I'd fail open for general APIs and fail closed for sensitive ones like OTP."
+> 🎤 **Interview answer:**
+> - "**Where:** basic limits in Nginx or the API gateway, detailed limits in app middleware.
+> - **Key (who to count):** IP for logged-out routes, userId or API key for logged-in routes. Much stricter limits on login and OTP.
+> - **Algorithm:** token bucket (allows small bursts) or sliding window (more accurate).
+> - **Storage:** Redis, so all servers share the same counts. `INCR` is safe even with many requests at once.
+> - **Response:** 429 with a `Retry-After` header.
+> - **If Redis is down:** decide to **allow** requests (keep the site up) or **block** them (safer). I'd allow for normal APIs, and block for sensitive ones like OTP."
 
-- Where: API gateway / Nginx and/or middleware.
-- Key: IP, userId, or API key + route.
-- Algorithm: token bucket or sliding window ([03 → rate limiting](03-nodejs-express.md#10-api-rate-limiting)).
-- Store: Redis (shared across servers, atomic `INCR`/Lua).
-- Response: 429 + `Retry-After`, headers `X-RateLimit-Remaining`.
-- If Redis is down: decide fail-open (allow, keep site up) or fail-closed (block, safer for login/OTP).
+Details: [03 → rate limiting](03-nodejs-express.md#10-api-rate-limiting).
 
 ---
 
 ## Design a chat system
 
-> 🎤 **Interview answer:** "This is close to the chat I built for the matrimony app. Clients connect over WebSockets with Socket.io, and the JWT is verified in the handshake middleware. Each user joins a room named after their user id. When a user sends a message, the server validates it, saves it in a messages collection first, and then emits it to the receiver's room, so nothing is lost if delivery fails. Messages live in their own collection, indexed on conversationId and createdAt, never inside a conversation document, and history loads with cursor pagination.
->
-> To run multiple servers, I use the Socket.io Redis adapter, so an emit on one server reaches users connected to another, plus sticky sessions. For offline users, the message is already in the database, so we send a push notification and deliver on reconnect. Delivered and read receipts are ack events that update the status. Online presence and typing indicators go in Redis with short TTLs, not in the database."
-
-(Close to your Socket.io + JWT chat.)
-- **Connection:** WebSocket (Socket.io), JWT verified in the handshake.
-- **Send:** client emits `message` → server validates → saves in DB (`messages: conversationId, senderId, text, createdAt, status`) → emits to the receiver's room (`userId` room).
-- **Multiple servers:** Socket.io **Redis adapter** so a message reaches a user connected to another server; sticky sessions on the load balancer.
-- **Offline users:** message is in DB; send push notification; deliver on reconnect.
-- **Message status:** sent → delivered → read (ack events).
-- **History:** cursor pagination by `createdAt` with index `{ conversationId: 1, createdAt: -1 }`.
-- **Online status / typing:** Redis with TTL, not DB.
-- **Scale:** messages in a separate collection, not inside conversation document.
+> 🎤 **Interview answer:** "This is close to the chat I built for the matrimony app.
+> - **Connection:** users connect with WebSockets (Socket.io). I check the JWT when they connect. Each user joins a room named after their user id.
+> - **Sending:** when a user sends a message, the server checks it, **saves it in the DB first**, then sends it to the receiver's room. So nothing is lost even if delivery fails.
+> - **Storage:** messages go in their own collection (not inside a conversation document), with an index on `conversationId + createdAt`. Old messages load page by page with cursor pagination.
+> - **Many servers:** the Socket.io **Redis adapter** passes messages between servers, so a user on server A gets a message sent from server B. Plus sticky sessions.
+> - **Offline users:** the message is already saved, so we send a push notification and deliver it when they come back online.
+> - **Delivered / read ticks:** the app sends back 'delivered' and 'read' events, and we update the status.
+> - **Online status and typing:** kept in Redis with a short expiry, not in the DB."
 
 ---
 
 ## Design a payment flow
 
-> 🎤 **Interview answer:** "This is based on what I built for 5 gateways. The client creates an order, which starts in `pending_payment`, with prices always calculated on the server. Then the client calls the payment endpoint with an Idempotency-Key. The backend creates an order on the gateway and returns the checkout details, and the user pays on the gateway's page, so card data never touches our servers.
+> 🎤 **Interview answer:** "This is based on what I built for 5 payment gateways.
+> 1. The user creates an order. Its status is `pending_payment`. **Prices are always calculated on the server**, never trusted from the app.
+> 2. The app calls our payment API with an **Idempotency-Key**. We create an order on the gateway (Razorpay / Stripe) and return the checkout details.
+> 3. The user pays on the **gateway's page**, so card details never touch our servers.
+> 4. The gateway sends a **webhook**. This is our **source of truth**. We check the signature, find the payment by the gateway's payment id, and if it's already processed, we just return 200 (so duplicates are safe). Otherwise we mark it paid, update the order, and send a `payment.success` event for the invoice and notifications.
+> 5. The app's 'verify' call after payment is only for showing the result. We never trust it alone.
+> 6. A **background job** checks payments stuck in 'pending' with the gateway's status API, in case a webhook was missed.
 >
-> The source of truth is the webhook. We verify the HMAC signature, look up the payment by the gateway's payment id, and if it's already processed we just return 200, which makes it idempotent with a unique index. Otherwise we mark it paid, update the order and publish a `payment.success` event for invoices and notifications. The client's verify call after redirect is only for UX, never trusted alone. A reconciliation job checks payments stuck in pending against the gateway's status API, in case a webhook was missed.
->
-> To support multiple gateways cleanly, I used a common PaymentGateway interface, with createOrder, verifyWebhook, refund and getStatus, and one adapter class per gateway, chosen by a factory based on country or currency. Amounts are stored as integers in the smallest unit."
-
-(Close to your 5 gateways.)
-1. Client → `POST /orders` → order created with `status = pending_payment`.
-2. `POST /payments` with **Idempotency-Key** → backend creates a gateway order (Razorpay/Stripe) → returns gateway order id / checkout session to client.
-3. User pays on gateway UI.
-4. Gateway sends **webhook** → verify **signature** → find payment by gateway id → if already processed, ignore (idempotent) → mark `paid` → update order → publish `payment.success` event.
-5. Client also calls a "verify" endpoint after redirect (don't trust only the client).
-6. **Reconciliation job** – check pending payments older than X minutes with gateway's status API (in case webhook was missed).
-7. **Gateway abstraction:** a common interface `createOrder / verifyWebhook / refund / getStatus` with one class per gateway (strategy/adapter pattern), chosen by country/currency/config.
-8. Store amounts in smallest unit (paise/cents) as integers.
+> To support many gateways cleanly, I made a common `PaymentGateway` interface with `createOrder`, `verifyWebhook`, `refund` and `getStatus`, and one class per gateway. A factory picks the right one based on country or currency. Amounts are saved as whole numbers in paise / cents."
 
 ---
 
 ## Design e-commerce checkout
 
-> 🎤 **Interview answer:** "The core problem is overselling: 10 units left and 50 people click buy at the same moment. The classic bug is reading the stock, checking it in code and then saving, which is a race condition. The simplest and most effective fix is an atomic conditional update: in MongoDB, `updateOne` with `stock >= qty` in the filter and `$inc` of minus qty; in SQL, `UPDATE ... SET stock = stock - qty WHERE id = ? AND stock >= qty`. If no row was modified, it's out of stock. For orders with multiple items, I wrap it in a transaction, or use `SELECT FOR UPDATE` row locks.
+> 🎤 **Interview answer:** "The main problem is **overselling**: 10 items left, and 50 people click 'buy' at the same moment.
 >
-> For a better user experience during payment, I'd reserve stock for about 10 minutes and have a job release expired reservations. For extreme flash sales, Redis DECRBY can gate the requests quickly, with the database synced through a queue. I used the atomic update approach for stock recalculation on bookings at Byte Digital and in Rider Perfume."
+> The common bug: read the stock, check it in code, then save. Two requests can read '10' at the same time and both sell. This is a race condition.
+>
+> The simplest and best fix: **check and reduce in one single database operation**:
+> - MongoDB: `updateOne({ _id, stock: { $gte: qty } }, { $inc: { stock: -qty } })`.
+> - SQL: `UPDATE products SET stock = stock - qty WHERE id = ? AND stock >= qty`.
+>
+> If nothing was updated, it's out of stock. The database makes sure only the right number of buyers succeed.
+>
+> For orders with many items, I use a transaction, or lock the rows with `SELECT ... FOR UPDATE`. For a better experience during payment, I can **reserve** stock for 10 minutes, and a job releases expired reservations. For huge flash sales, Redis `DECRBY` can handle the rush first, and the DB is updated through a queue. I used the single-update approach in Byte Digital and Rider Perfume."
 
-**Problem:** 10 units left, 50 users click "buy" at the same time → don't oversell.
-Options:
-- **Atomic conditional update** (simplest, very effective):
-  - Mongo: `updateOne({ _id, stock: { $gte: qty } }, { $inc: { stock: -qty } })` → if `modifiedCount === 0`, out of stock.
-  - SQL: `UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1` → check affected rows.
-- **Row lock** `SELECT ... FOR UPDATE` inside a transaction.
-- **Reservation** – reserve stock for 10 minutes during payment; a job releases expired reservations.
-- **Redis** `DECRBY` for flash sales, then sync to DB through a queue.
-
-(In Byte Digital I did "stock recalculation on each booking" – same idea.)
+```js
+// MongoDB – check and reduce in one step
+const result = await Product.updateOne(
+  { _id: productId, stock: { $gte: qty } },  // only if enough stock
+  { $inc: { stock: -qty } }                  // reduce it
+);
+if (result.modifiedCount === 0) throw new AppError("Out of stock", 409);
+```
 
 ---
 
 ## Design a "profiles near me" search
 
-> 🎤 **Interview answer:** "This is what I built for the matrimony platform. Each profile stores its location as a GeoJSON Point, in longitude, latitude order, with a 2dsphere index. The search uses a `$geoNear` aggregation as the first stage, with the user's coordinates and a max distance, plus a query filter for preferences like gender, age range calculated from date of birth, and religion, excluding blocked users and the user themselves, then pagination. A compound index supports the common filters. For privacy, we never return other users' exact coordinates, only a rounded distance like '5 km away'. For performance, popular searches can be cached briefly and the page size is capped."
-
-(Your matrimony project.)
-- Store location as GeoJSON Point `[lng, lat]` with a **2dsphere index**.
-- Query with `$near` / `$geoNear` + filters (gender, age range from dob, religion) + pagination.
-- Compound index on common filters; `$geoNear` must be first in aggregation and can take a `query` filter.
-- Don't return exact coordinates of other users (privacy) – return distance rounded ("5 km away").
-- Cache popular searches briefly; limit results per page.
+> 🎤 **Interview answer:** "This is what I built for the matrimony platform.
+> - Each profile saves its location as a point `[longitude, latitude]`, with a `2dsphere` index.
+> - The search uses `$geoNear` with the user's location and a max distance, plus filters like gender, age range (calculated from date of birth) and religion. It skips blocked users and the user themselves, and returns results page by page.
+> - A compound index supports the common filters.
+> - **Privacy:** we never return other users' exact location, only a rounded distance like '5 km away'.
+> - **Speed:** popular searches can be cached for a short time, and the page size is limited."
 
 ---
 
